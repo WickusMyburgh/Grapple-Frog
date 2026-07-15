@@ -8,9 +8,10 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 100%; height: 100%; overflow: hidden; background: #0d1b2a; touch-action: none;
     -webkit-user-select: none; user-select: none; }
-  #game { display: block; width: 100vw; height: 100vh; }
+  /* canvas is sized & centered from JS to a scaled 1280x720 rect; body bg forms the letterbox bars */
+  #game { display: block; position: absolute; }
   #hud {
-    position: fixed; top: 0; left: 0; right: 0; padding: 12px 16px;
+    position: fixed; top: var(--gy, 0); left: var(--gx, 0); width: var(--gw, 100%); padding: 12px 16px;
     display: flex; justify-content: space-between; align-items: flex-start;
     font-family: 'Trebuchet MS', 'Segoe UI Rounded', 'Segoe UI', sans-serif; color: #eaf6e9;
     pointer-events: none; text-shadow: 0 2px 6px rgba(0,0,0,.55);
@@ -153,13 +154,30 @@
 'use strict';
 const cvs = document.getElementById('game');
 const ctx = cvs.getContext('2d');
-let W, H, DPR;
+// Fixed virtual resolution: every device simulates and lays out the world
+// in these coordinates, so the same daily seed yields identical layouts.
+const W = 1280, H = 720;
+let scale = 1, offX = 0, offY = 0, DPR = 1;
 function resize() {
   DPR = Math.min(window.devicePixelRatio || 1, 2);
-  W = window.innerWidth; H = window.innerHeight;
-  cvs.width = W * DPR; cvs.height = H * DPR;
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const ww = window.innerWidth, wh = window.innerHeight;
+  scale = Math.min(ww / W, wh / H);
+  offX = (ww - W * scale) / 2;
+  offY = (wh - H * scale) / 2;
+  cvs.width = Math.round(W * scale * DPR);
+  cvs.height = Math.round(H * scale * DPR);
+  cvs.style.width = W * scale + 'px';
+  cvs.style.height = H * scale + 'px';
+  cvs.style.left = offX + 'px';
+  cvs.style.top = offY + 'px';
+  ctx.setTransform(scale * DPR, 0, 0, scale * DPR, 0, 0);
+  const rs = document.documentElement.style;
+  rs.setProperty('--gx', offX + 'px');
+  rs.setProperty('--gy', offY + 'px');
+  rs.setProperty('--gw', W * scale + 'px');
 }
+const toVirtualX = clientX => (clientX - offX) / scale;
+const toVirtualY = clientY => (clientY - offY) / scale;
 resize();
 addEventListener('resize', resize);
 
@@ -633,8 +651,8 @@ function press(e) {
   // the tongue goes for the lantern nearest this point
   if (e && typeof e.clientX === 'number') {
     hasTap = true;
-    tapWX = e.clientX + camX;
-    tapWY = e.clientY;
+    tapWX = toVirtualX(e.clientX) + camX;
+    tapWY = toVirtualY(e.clientY);
   } else {
     hasTap = false; // keyboard: fall back to auto-aim
   }
