@@ -4,13 +4,19 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Grapple Frog</title>
+<meta name="theme-color" content="#0d1b2a">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 100%; height: 100%; overflow: hidden; background: #0d1b2a; touch-action: none;
     -webkit-user-select: none; user-select: none; }
-  #game { display: block; width: 100vw; height: 100vh; }
+  /* canvas is sized & centered from JS to a scaled 1280x720 rect; body bg forms the letterbox bars */
+  #game { display: block; position: absolute; }
   #hud {
-    position: fixed; top: 0; left: 0; right: 0; padding: 12px 16px;
+    position: fixed; top: var(--gy, 0); left: var(--gx, 0); width: var(--gw, 100%); padding: 12px 16px;
     display: flex; justify-content: space-between; align-items: flex-start;
     font-family: 'Trebuchet MS', 'Segoe UI Rounded', 'Segoe UI', sans-serif; color: #eaf6e9;
     pointer-events: none; text-shadow: 0 2px 6px rgba(0,0,0,.55);
@@ -153,13 +159,30 @@
 'use strict';
 const cvs = document.getElementById('game');
 const ctx = cvs.getContext('2d');
-let W, H, DPR;
+// Fixed virtual resolution: every device simulates and lays out the world
+// in these coordinates, so the same daily seed yields identical layouts.
+const W = 1280, H = 720;
+let scale = 1, offX = 0, offY = 0, DPR = 1;
 function resize() {
   DPR = Math.min(window.devicePixelRatio || 1, 2);
-  W = window.innerWidth; H = window.innerHeight;
-  cvs.width = W * DPR; cvs.height = H * DPR;
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const ww = window.innerWidth, wh = window.innerHeight;
+  scale = Math.min(ww / W, wh / H);
+  offX = (ww - W * scale) / 2;
+  offY = (wh - H * scale) / 2;
+  cvs.width = Math.round(W * scale * DPR);
+  cvs.height = Math.round(H * scale * DPR);
+  cvs.style.width = W * scale + 'px';
+  cvs.style.height = H * scale + 'px';
+  cvs.style.left = offX + 'px';
+  cvs.style.top = offY + 'px';
+  ctx.setTransform(scale * DPR, 0, 0, scale * DPR, 0, 0);
+  const rs = document.documentElement.style;
+  rs.setProperty('--gx', offX + 'px');
+  rs.setProperty('--gy', offY + 'px');
+  rs.setProperty('--gw', W * scale + 'px');
 }
+const toVirtualX = clientX => (clientX - offX) / scale;
+const toVirtualY = clientY => (clientY - offY) / scale;
 resize();
 addEventListener('resize', resize);
 
@@ -205,7 +228,10 @@ function mulberry32(seed) {
 }
 const dailyNum = Math.floor((Date.now() - Date.UTC(2026, 0, 1)) / 86400000) + 1;
 const dailyDateStr = new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-document.getElementById('dailyLabel').textContent = '#' + dailyNum + ' · ' + DAILY_GOAL_M + 'M RACE';
+function updateDailyLabel() {
+  document.getElementById('dailyLabel').textContent =
+    (dailyDone[dailyNum] ? '✅ ' : '') + '#' + dailyNum + ' · ' + DAILY_GOAL_M + 'M RACE';
+}
 
 // ---------------- audio ----------------
 let AC = null, muted = false;
@@ -253,6 +279,7 @@ const muteBtn = document.getElementById('muteBtn');
 muteBtn.addEventListener('click', e => {
   e.stopPropagation(); muted = !muted;
   muteBtn.textContent = muted ? '🔇' : '🔊';
+  saveGame();
 });
 
 // ---------------- state ----------------
@@ -264,9 +291,50 @@ let hasTap = false, tapWX = 0, tapWY = 0;   // where the player tapped, in world
 let mode = 'endless';
 let bests = { endless: 0, daily: 0 };
 let bestDailyTime = null;
+let dailyDone = {};                        // dailyNum -> true once that daily is beaten
 let lastAnchorX = 0;
 let rand = Math.random;
 let lastRun = null;
+
+// ---------------- device save (localStorage) ----------------
+// If localStorage is unavailable (e.g. private browsing), store stays null
+// and everything silently falls back to session-only behaviour.
+const SAVE_KEY = 'grappleFrogSave.v1';
+const store = (() => {
+  try {
+    const s = window.localStorage;
+    s.setItem('__gfTest', '1'); s.removeItem('__gfTest');
+    return s;
+  } catch (e) { return null; }
+})();
+function saveGame() {
+  if (!store) return;
+  try {
+    store.setItem(SAVE_KEY, JSON.stringify({
+      bank, owned: [...owned], equipped, bests, bestDailyTime, muted, dailyDone
+    }));
+  } catch (e) {}
+}
+function loadGame() {
+  if (!store) return;
+  try {
+    const d = JSON.parse(store.getItem(SAVE_KEY) || 'null');
+    if (!d) return;
+    if (typeof d.bank === 'number') bank = d.bank;
+    if (Array.isArray(d.owned)) for (const id of d.owned) if (skinOf(id) || trailOf(id)) owned.add(id);
+    if (d.equipped) {
+      if (skinOf(d.equipped.skin) && owned.has(d.equipped.skin)) equipped.skin = d.equipped.skin;
+      if (trailOf(d.equipped.trail) && owned.has(d.equipped.trail)) equipped.trail = d.equipped.trail;
+    }
+    if (d.bests) {
+      bests.endless = Number(d.bests.endless) || 0;
+      bests.daily = Number(d.bests.daily) || 0;
+    }
+    if (typeof d.bestDailyTime === 'number') bestDailyTime = d.bestDailyTime;
+    if (typeof d.muted === 'boolean') { muted = d.muted; muteBtn.textContent = muted ? '🔇' : '🔊'; }
+    if (d.dailyDone && typeof d.dailyDone === 'object') dailyDone = d.dailyDone;
+  } catch (e) {}
+}
 
 const ambient = Array.from({ length: 26 }, () => ({
   x: Math.random() * 3000, y: Math.random(), s: Math.random() * 0.5 + 0.3, t: Math.random() * 6.28
@@ -505,11 +573,13 @@ function buildShop() {
           bank -= item.price; owned.add(item.id);
           equipped[kind] = item.id;
           sBuy(); toast(`${item.name} unlocked & equipped!`);
+          saveGame();
         } else {
           sDeny(); toast(`Need ${item.price - bank} more flies — go catch some!`);
         }
       } else if (equipped[kind] !== item.id) {
         equipped[kind] = item.id; sEquip();
+        saveGame();
       }
       refreshShop();
     });
@@ -633,8 +703,8 @@ function press(e) {
   // the tongue goes for the lantern nearest this point
   if (e && typeof e.clientX === 'number') {
     hasTap = true;
-    tapWX = e.clientX + camX;
-    tapWY = e.clientY;
+    tapWX = toVirtualX(e.clientX) + camX;
+    tapWY = toVirtualY(e.clientY);
   } else {
     hasTap = false; // keyboard: fall back to auto-aim
   }
@@ -691,6 +761,7 @@ function bankAndBest() {
   const nb = score > bests[mode];
   bests[mode] = Math.max(bests[mode], score);
   document.getElementById('best').textContent = bests[mode];
+  saveGame();
   return nb;
 }
 function gameOver() {
@@ -721,6 +792,8 @@ function win() {
   floatText(frog.x, frog.y - 80, 'FINISH!', '#ffe28a', 36);
   const nbTime = bestDailyTime === null || runTime < bestDailyTime;
   if (nbTime) bestDailyTime = runTime;
+  dailyDone[dailyNum] = true;
+  updateDailyLabel();
   bankAndBest();
   lastRun = { mode, dist, flies: flyCount, skims, score, won: true, time: runTime };
   showWin(nbTime, flyCount);
@@ -1182,10 +1255,17 @@ function loop(t) {
   render(t);
   requestAnimationFrame(loop);
 }
+loadGame();
+updateDailyLabel();
 reset();
 started = false;
 showStart();
 requestAnimationFrame(loop);
+
+// ---------------- PWA: offline cache ----------------
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').catch(() => {});
+}
 })();
 </script>
 </body>
