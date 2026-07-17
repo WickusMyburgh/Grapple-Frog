@@ -109,13 +109,13 @@
   .card button:active:not(:disabled) { transform: scale(.95); }
   #shopClose { margin-top: 28px; }
   /* ---------- leaderboard & player-name dialog ---------- */
-  #lb, #nameDlg {
+  #lb, #nameDlg, #iosTip {
     position: fixed; inset: 0; z-index: 25; display: none; flex-direction: column; align-items: center;
     background: rgba(6,14,22,.82); backdrop-filter: blur(5px);
     font-family: 'Trebuchet MS', 'Segoe UI Rounded', 'Segoe UI', sans-serif; color: #eaf6e9;
     padding: 22px 14px 40px; overflow-y: auto;
   }
-  #lb.open, #nameDlg.open { display: flex; }
+  #lb.open, #nameDlg.open, #iosTip.open { display: flex; }
   #lb h2 { font-size: 28px; color: #ffe28a; text-shadow: 0 3px 0 #a3742a; letter-spacing: 1px; }
   #lbSub { margin-top: 6px; font-size: 13px; letter-spacing: 2px; opacity: .8; }
   #lbList { margin-top: 18px; width: 100%; max-width: 420px; }
@@ -129,12 +129,15 @@
   .lbRow .nm2 { flex: 1; font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .lbRow .tm { font-variant-numeric: tabular-nums; }
   .lbRow .fl { width: 56px; text-align: right; opacity: .8; font-size: 13px; }
-  #lbGap { text-align: center; opacity: .5; letter-spacing: 4px; margin: 2px 0 8px; }
+  .lbGap { text-align: center; opacity: .5; letter-spacing: 4px; margin: 2px 0 8px; }
+  .lbHead { margin: 16px 0 8px; font-size: 14px; letter-spacing: 3px; color: #ffe28a; opacity: .9; text-align: center; }
+  .lbHead.att { color: #8fdcee; }
+  .lbNote { font-size: 13px; opacity: .6; margin-bottom: 8px; text-align: center; }
   #lbState { margin-top: 18px; font-size: 14px; opacity: .85; text-align: center; line-height: 1.6; white-space: pre-line; }
   #lbClose { margin-top: 24px; }
-  #nameDlg { justify-content: center; }
-  #nameDlg h2 { font-size: 26px; color: #9be564; text-shadow: 0 3px 0 #2c5b1e; letter-spacing: 1px; }
-  #nameDlg p { margin-top: 10px; font-size: 14px; opacity: .85; max-width: 340px; text-align: center; line-height: 1.5; }
+  #nameDlg, #iosTip { justify-content: center; }
+  #nameDlg h2, #iosTip h2 { font-size: 26px; color: #9be564; text-shadow: 0 3px 0 #2c5b1e; letter-spacing: 1px; }
+  #nameDlg p, #iosTip p { margin-top: 10px; font-size: 14px; opacity: .85; max-width: 340px; text-align: center; line-height: 1.5; }
   #nameInput {
     margin-top: 18px; width: 240px; padding: 12px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,.3);
     background: rgba(255,255,255,.08); color: #eaf6e9; font-family: inherit; font-size: 18px; text-align: center;
@@ -170,6 +173,7 @@
     <button class="btn alt" id="btnDaily">🏁 Daily<small id="dailyLabel"></small></button>
     <button class="btn gold" id="btnShop">🛍️ Shop<small>SKINS &amp; TRAILS</small></button>
     <button class="btn ghost" id="btnLb">🏆 Leaderboard<small>DAILY TOP 10</small></button>
+    <button class="btn ghost" id="btnInstall" style="display:none">📲 Install app</button>
   </div>
   <div class="btnrow" id="deathBtns" style="display:none">
     <button class="btn gold" id="btnLb2" style="display:none">🏆 Leaderboard</button>
@@ -198,13 +202,18 @@
 </div>
 <div id="nameDlg">
   <h2>PICK A PLAYER NAME</h2>
-  <p>You finished today's daily! Choose a leaderboard name — 2–12 letters or numbers. It's saved on this device and reused for every daily.</p>
+  <p>Get your run on today's leaderboard! Choose a name — 2–12 letters or numbers. It's saved on this device and reused for every daily.</p>
   <input id="nameInput" maxlength="12" autocomplete="off" spellcheck="false" placeholder="FrogChamp42">
   <div id="nameErr"></div>
   <div class="btnrow">
     <button class="btn" id="nameSave">Save &amp; Submit</button>
     <button class="btn ghost" id="nameSkip">Not now</button>
   </div>
+</div>
+<div id="iosTip">
+  <h2>📲 ADD TO HOME SCREEN</h2>
+  <p>In Safari, tap the <b>Share</b> button (the square with an arrow pointing up), then scroll down and choose <b>“Add to Home Screen”</b>.<br><br>Grapple Frog installs like an app and works offline!</p>
+  <div class="btnrow"><button class="btn" id="iosTipClose">Got it</button></div>
 </div>
 <div id="toast"></div>
 <script>
@@ -389,8 +398,11 @@ function loadGame() {
     if (d.lb && typeof d.lb === 'object') {
       if (typeof d.lb.name === 'string' && /^[A-Za-z0-9]{2,12}$/.test(d.lb.name)) lb.name = d.lb.name;
       if (d.lb.submitted && typeof d.lb.submitted === 'object') lb.submitted = d.lb.submitted;
+      if (d.lb.submittedDist && typeof d.lb.submittedDist === 'object') lb.submittedDist = d.lb.submittedDist;
       if (Array.isArray(d.lb.queue)) {
-        lb.queue = d.lb.queue.filter(q => q && typeof q.daily_num === 'number' && typeof q.time_ms === 'number');
+        lb.queue = d.lb.queue
+          .filter(q => q && typeof q.daily_num === 'number' && (typeof q.time_ms === 'number' || typeof q.distance_m === 'number'))
+          .map(q => Object.assign({ kind: typeof q.time_ms === 'number' ? 'time' : 'dist' }, q));
       }
     }
   } catch (e) {}
@@ -494,7 +506,7 @@ function toast(txt) {
   clearTimeout(tst._t);
   tst._t = setTimeout(() => tst.classList.remove('show'), 2200);
 }
-for (const id of ['btnEndless','btnDaily','btnShop','btnShop2','btnShare','btnCopy','btnMenu','shopClose','btnLb','btnLb2','lbClose','nameSave','nameSkip','nameInput']) {
+for (const id of ['btnEndless','btnDaily','btnShop','btnShop2','btnShare','btnCopy','btnMenu','shopClose','btnLb','btnLb2','lbClose','nameSave','nameSkip','nameInput','btnInstall','iosTipClose']) {
   ['pointerdown','pointerup'].forEach(ev => el(id).addEventListener(ev, e => e.stopPropagation()));
 }
 el('btnEndless').addEventListener('click', e => { e.stopPropagation(); startGame('endless'); });
@@ -670,7 +682,7 @@ buildShop();
 const SB_URL = 'https://svvtxxonagahxgftvnwx.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN2dnR4eG9uYWdhaHhnZnR2bnd4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQxODg5MTgsImV4cCI6MjA5OTc2NDkxOH0.McmBB-BDmxXa2PXceCikPEjh98cfUYWbMCuHjs9G5O4';
 const NAME_RE = /^[A-Za-z0-9]{2,12}$/;
-const lb = { name: null, submitted: {}, queue: [] };
+const lb = { name: null, submitted: {}, submittedDist: {}, queue: [] };
 async function sbFetch(path, opts = {}) {
   opts.headers = Object.assign(
     { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' },
@@ -681,17 +693,23 @@ async function sbFetch(path, opts = {}) {
 }
 async function submitScore(item) {
   try {
-    if (lb.submitted[item.daily_num] != null) {
-      // we already sent a row for this daily: improve it in place
+    const isTime = item.kind !== 'dist';
+    const already = isTime ? lb.submitted[item.daily_num] : lb.submittedDist[item.daily_num];
+    const payload = isTime
+      ? { time_ms: item.time_ms, flies: item.flies }
+      : { distance_m: item.distance_m, flies: item.flies };
+    if (already != null) {
+      // we already sent this kind of row for this daily: improve it in place
       const res = await sbFetch(
-        `daily_scores?daily_num=eq.${item.daily_num}&player_name=eq.${encodeURIComponent(item.player_name)}`,
-        { method: 'PATCH', headers: { Prefer: 'return=representation' },
-          body: JSON.stringify({ time_ms: item.time_ms, flies: item.flies }) });
+        `daily_scores?daily_num=eq.${item.daily_num}&player_name=eq.${encodeURIComponent(item.player_name)}` +
+        `&time_ms=${isTime ? 'not.is.null' : 'is.null'}`,
+        { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify(payload) });
       if ((await res.json()).length > 0) return true;
       // no matching row on the server after all — insert below
     }
     await sbFetch('daily_scores', {
-      method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(item)
+      method: 'POST', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify(Object.assign({ daily_num: item.daily_num, player_name: item.player_name }, payload))
     });
     return true;
   } catch (e) { return false; }
@@ -704,23 +722,42 @@ async function flushQueue() {
     for (const item of [...lb.queue]) {
       item.player_name = lb.name;
       if (await submitScore(item)) {
-        lb.submitted[item.daily_num] = item.time_ms;
+        if (item.kind === 'dist') lb.submittedDist[item.daily_num] = item.distance_m;
+        else lb.submitted[item.daily_num] = item.time_ms;
         lb.queue = lb.queue.filter(q => q !== item);
         saveGame();
       }
     }
   } finally { lbFlushing = false; }
 }
-// called on every daily win; keeps at most one (best) pending score per daily
+// called on every daily win; keeps at most one (best) pending time per daily
 function recordDailyResult() {
   const timeMs = Math.max(1, Math.round(runTime * 1000));
-  const queued = lb.queue.find(q => q.daily_num === dailyNum);
+  // finished: any pending distance attempt for this daily is moot
+  lb.queue = lb.queue.filter(q => !(q.daily_num === dailyNum && q.kind === 'dist'));
+  const queued = lb.queue.find(q => q.daily_num === dailyNum && q.kind === 'time');
   const known = Math.min(lb.submitted[dailyNum] ?? Infinity, queued ? queued.time_ms : Infinity);
-  if (timeMs >= known) return;
+  if (timeMs >= known) { saveGame(); return; }
   if (queued) { queued.time_ms = timeMs; queued.flies = flyCount; }
-  else lb.queue.push({ daily_num: dailyNum, player_name: lb.name, time_ms: timeMs, flies: flyCount });
+  else lb.queue.push({ kind: 'time', daily_num: dailyNum, player_name: lb.name, time_ms: timeMs, flies: flyCount });
   saveGame();
-  if (!lb.name) { setTimeout(openNameDlg, 900); return; }   // first daily finish: pick a name
+  if (!lb.name) { setTimeout(openNameDlg, 900); return; }   // first daily result: pick a name
+  flushQueue();
+}
+// called on every daily splash; keeps at most one (best) pending distance per daily,
+// and stops entirely once the player has finished that daily
+function recordDailyAttempt() {
+  if (mode !== 'daily') return;
+  const dm = Math.min(DAILY_GOAL_M, Math.floor(dist));
+  if (dm < 1) return;
+  if (lb.submitted[dailyNum] != null || lb.queue.some(q => q.daily_num === dailyNum && q.kind === 'time')) return;
+  const queued = lb.queue.find(q => q.daily_num === dailyNum && q.kind === 'dist');
+  const known = Math.max(lb.submittedDist[dailyNum] ?? -1, queued ? queued.distance_m : -1);
+  if (dm <= known) return;
+  if (queued) { queued.distance_m = dm; queued.flies = flyCount; }
+  else lb.queue.push({ kind: 'dist', daily_num: dailyNum, player_name: lb.name, distance_m: dm, flies: flyCount });
+  saveGame();
+  if (!lb.name) { setTimeout(openNameDlg, 900); return; }   // first daily result: pick a name
   flushQueue();
 }
 // ------- player-name dialog -------
@@ -745,7 +782,7 @@ el('nameSkip').addEventListener('click', e => { e.stopPropagation(); el('nameDlg
 // ------- board panel -------
 const fmtLbTime = ms =>
   Math.floor(ms / 60000) + ':' + String(Math.floor(ms / 1000) % 60).padStart(2, '0') + '.' + Math.floor(ms % 1000 / 100);
-function lbAddRow(rank, r, isMe) {
+function lbAddRow(rank, r, isMe, kind) {
   const row = document.createElement('div');
   row.className = 'lbRow' + (isMe ? ' me' : '');
   const mk = (cls, txt) => {
@@ -753,14 +790,61 @@ function lbAddRow(rank, r, isMe) {
   };
   mk('rk', rank >= 1 && rank <= 3 ? ['🥇', '🥈', '🥉'][rank - 1] : '#' + rank);
   mk('nm2', r.player_name + (isMe ? ' (you)' : ''));
-  mk('tm', fmtLbTime(r.time_ms));
+  mk('tm', kind === 'dist' ? (r.distance_m ?? 0) + 'm' : fmtLbTime(r.time_ms));
   mk('fl', '🪰 ' + (r.flies ?? 0));
   el('lbList').appendChild(row);
 }
 function lbAddGap() {
   const gap = document.createElement('div');
-  gap.id = 'lbGap'; gap.textContent = '· · ·';
+  gap.className = 'lbGap'; gap.textContent = '· · ·';
   el('lbList').appendChild(gap);
+}
+function lbAddHead(txt, att) {
+  const h = document.createElement('div');
+  h.className = 'lbHead' + (att ? ' att' : ''); h.textContent = txt;
+  el('lbList').appendChild(h);
+}
+function lbAddNote(txt) {
+  const n = document.createElement('div');
+  n.className = 'lbNote'; n.textContent = txt;
+  el('lbList').appendChild(n);
+}
+const dedupeByName = rows => {
+  const seen = new Set(), out = [];
+  for (const r of rows) {   // rows arrive server-ordered, so first hit = player's best
+    if (!r || !r.player_name || seen.has(r.player_name)) continue;
+    seen.add(r.player_name); out.push(r);
+  }
+  return out;
+};
+async function ownDeepRank(kind) {
+  // our row sits beyond the fetched window: ask the server for it + our rank
+  const isTime = kind === 'time';
+  const nullFlt = 'time_ms=' + (isTime ? 'not.is.null' : 'is.null');
+  const own = await (await sbFetch(
+    `daily_scores?daily_num=eq.${dailyNum}&player_name=eq.${encodeURIComponent(lb.name)}&${nullFlt}` +
+    `&select=player_name,time_ms,flies,distance_m&order=${isTime ? 'time_ms.asc' : 'distance_m.desc'}&limit=1`)).json();
+  if (!own.length) return null;
+  const betterFlt = isTime ? `time_ms=lt.${own[0].time_ms}` : `distance_m=gt.${own[0].distance_m ?? 0}&${nullFlt}`;
+  const cnt = await sbFetch(`daily_scores?daily_num=eq.${dailyNum}&${betterFlt}&select=player_name`,
+    { method: 'HEAD', headers: { Prefer: 'count=exact' } });
+  const total = parseInt((cnt.headers.get('content-range') || '/-1').split('/')[1], 10);
+  return { rank: total >= 0 ? total + 1 : '?', row: own[0] };
+}
+// renders one section; returns true if the player's own entry was shown in it
+async function renderSection(title, att, rawRows, board, kind, showMe) {
+  lbAddHead(title, att);
+  if (!board.length) { lbAddNote(att ? 'No attempts yet.' : 'No finishers yet — be the first!'); return false; }
+  board.slice(0, 10).forEach((r, i) => lbAddRow(i + 1, r, showMe && r.player_name === lb.name, kind));
+  if (!showMe || !lb.name) return false;
+  const meIdx = board.findIndex(r => r.player_name === lb.name);
+  if (meIdx >= 0 && meIdx < 10) return true;
+  if (meIdx >= 10) { lbAddGap(); lbAddRow(meIdx + 1, board[meIdx], true, kind); return true; }
+  if (rawRows.length >= 200) {
+    const deep = await ownDeepRank(kind);
+    if (deep) { lbAddGap(); lbAddRow(deep.rank, deep.row, true, kind); return true; }
+  }
+  return false;
 }
 async function openLeaderboard() {
   el('lb').classList.add('open');
@@ -768,35 +852,21 @@ async function openLeaderboard() {
   const list = el('lbList'), state = el('lbState');
   list.innerHTML = ''; state.textContent = 'Loading…';
   try {
-    const rows = await (await sbFetch(
-      `daily_scores?daily_num=eq.${dailyNum}&select=player_name,time_ms,flies&order=time_ms.asc&limit=200`)).json();
-    const seen = new Set(), board = [];
-    for (const r of rows) {   // one entry per player: their fastest counts
-      if (!r || typeof r.time_ms !== 'number' || !r.player_name || seen.has(r.player_name)) continue;
-      seen.add(r.player_name); board.push(r);
-    }
+    const base = `daily_scores?daily_num=eq.${dailyNum}&select=player_name,time_ms,flies,distance_m`;
+    const [finRows, attRows] = await Promise.all([
+      sbFetch(`${base}&time_ms=not.is.null&order=time_ms.asc&limit=200`).then(r => r.json()),
+      sbFetch(`${base}&time_ms=is.null&order=distance_m.desc.nullslast&limit=200`).then(r => r.json()),
+    ]);
+    const fin = dedupeByName(finRows.filter(r => r && typeof r.time_ms === 'number'));
+    const finNames = new Set(fin.map(r => r.player_name));
+    // finishers don't compete in the attempts section
+    const att = dedupeByName(attRows.filter(r => r && typeof r.distance_m === 'number' && !finNames.has(r.player_name)));
     list.innerHTML = '';
-    board.slice(0, 10).forEach((r, i) => lbAddRow(i + 1, r, r.player_name === lb.name));
-    const meIdx = lb.name ? board.findIndex(r => r.player_name === lb.name) : -1;
-    if (meIdx >= 10) {
-      lbAddGap();
-      lbAddRow(meIdx + 1, board[meIdx], true);
-    } else if (lb.name && meIdx === -1 && rows.length >= 200) {
-      // our row may sit beyond the fetched window: ask the server for it + our rank
-      const own = await (await sbFetch(
-        `daily_scores?daily_num=eq.${dailyNum}&player_name=eq.${encodeURIComponent(lb.name)}&select=player_name,time_ms,flies&order=time_ms.asc&limit=1`)).json();
-      if (own.length) {
-        const cnt = await sbFetch(
-          `daily_scores?daily_num=eq.${dailyNum}&time_ms=lt.${own[0].time_ms}&select=player_name`,
-          { method: 'HEAD', headers: { Prefer: 'count=exact' } });
-        const total = parseInt((cnt.headers.get('content-range') || '/-1').split('/')[1], 10);
-        lbAddGap();
-        lbAddRow(total >= 0 ? total + 1 : '?', own[0], true);
-      }
-    }
-    state.textContent = board.length ? '' : 'No times yet today — be the first!';
+    const meInFin = await renderSection('🏁 FINISHERS', false, finRows, fin, 'time', true);
+    await renderSection('💦 BEST ATTEMPTS', true, attRows, att, 'dist', !meInFin && lb.submitted[dailyNum] == null);
+    state.textContent = '';
     if (lb.queue.some(q => q.daily_num === dailyNum)) {
-      state.textContent = '⏳ Your time is queued and will upload when you\'re back online.';
+      state.textContent = '⏳ Your latest result is queued and will upload when you\'re back online.';
       flushQueue();
     }
   } catch (e) {
@@ -806,6 +876,31 @@ async function openLeaderboard() {
 el('btnLb').addEventListener('click', e => { e.stopPropagation(); openLeaderboard(); });
 el('btnLb2').addEventListener('click', e => { e.stopPropagation(); openLeaderboard(); });
 el('lbClose').addEventListener('click', e => { e.stopPropagation(); el('lb').classList.remove('open'); });
+
+// ---------------- install app button ----------------
+let installEvt = null;
+const isStandalone = () =>
+  (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+const isIos = () => /iphone|ipad|ipod/i.test(navigator.userAgent) ||
+  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);   // iPadOS masquerades as Mac
+function refreshInstallBtn() {
+  el('btnInstall').style.display = !isStandalone() && (installEvt || isIos()) ? '' : 'none';
+}
+addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; refreshInstallBtn(); });
+addEventListener('appinstalled', () => { installEvt = null; refreshInstallBtn(); });
+el('btnInstall').addEventListener('click', async e => {
+  e.stopPropagation();
+  if (installEvt) {
+    const evt = installEvt;
+    evt.prompt();
+    const choice = await Promise.resolve(evt.userChoice).catch(() => null);
+    if (choice && choice.outcome === 'accepted') { installEvt = null; refreshInstallBtn(); }
+  } else {
+    el('iosTip').classList.add('open');   // iOS Safari has no install prompt API
+  }
+});
+el('iosTipClose').addEventListener('click', e => { e.stopPropagation(); el('iosTip').classList.remove('open'); });
+refreshInstallBtn();
 
 // ---------------- share card ----------------
 function makeShareCard(r) {
@@ -895,7 +990,7 @@ function roundRect(g, x, y, w, h, r) {
 // ---------------- input (tap-to-target) ----------------
 function press(e) {
   audio();
-  if (el('shop').classList.contains('open') || el('lb').classList.contains('open') || el('nameDlg').classList.contains('open')) return;
+  if (el('shop').classList.contains('open') || el('lb').classList.contains('open') || el('nameDlg').classList.contains('open') || el('iosTip').classList.contains('open')) return;
   if (!started) return;
   if (dead) {
     if (deathT > 0.5 && !msg.classList.contains('hidden')) { msg.classList.add('hidden'); reset(); }
@@ -976,6 +1071,7 @@ function gameOver() {
   score += Math.floor(dist);
   const nb = bankAndBest();
   lastRun = { mode, dist, flies: flyCount, skims, score, won: false, time: runTime };
+  recordDailyAttempt();
   showDeath(nb, flyCount);
 }
 function win() {
