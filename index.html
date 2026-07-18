@@ -255,6 +255,7 @@ const REEL = 55;
 const PUMP = 320;
 const MAX_SPD = 1500;
 const WATER_Y = () => H - 64;
+const PAD_X = 90;                         // starting lily pad
 const DAILY_GOAL_M = 400;                 // daily challenge finish line
 const goalX = () => DAILY_GOAL_M * 50;
 
@@ -349,6 +350,8 @@ let frog, anchors, flies, particles, texts, ripples, trail;
 let camX, camShake, holding, attached, ropeLen, tongueT;
 let dist, score, flyCount, skims, combo, comboT, nextMile;
 let dead, won, started = false, timeScale = 1, skimArmed, deathT, runTime;
+let launched = false, padLift = false;     // pre-launch idle on the lily pad
+let grappledOnce = false;                  // ever completed a first grapple (persisted)
 let hasTap = false, tapWX = 0, tapWY = 0;   // where the player tapped, in world coords
 let mode = 'endless';
 let bests = { endless: 0, daily: 0 };
@@ -373,7 +376,7 @@ function saveGame() {
   if (!store) return;
   try {
     store.setItem(SAVE_KEY, JSON.stringify({
-      bank, owned: [...owned], equipped, bests, bestDailyTime, muted, dailyDone, lb
+      bank, owned: [...owned], equipped, bests, bestDailyTime, muted, dailyDone, lb, grappledOnce
     }));
   } catch (e) {}
 }
@@ -395,6 +398,7 @@ function loadGame() {
     if (typeof d.bestDailyTime === 'number') bestDailyTime = d.bestDailyTime;
     if (typeof d.muted === 'boolean') { muted = d.muted; muteBtn.textContent = muted ? '🔇' : '🔊'; }
     if (d.dailyDone && typeof d.dailyDone === 'object') dailyDone = d.dailyDone;
+    if (d.grappledOnce === true) grappledOnce = true;
     if (d.lb && typeof d.lb === 'object') {
       if (typeof d.lb.name === 'string' && /^[A-Za-z0-9]{2,12}$/.test(d.lb.name)) lb.name = d.lb.name;
       if (d.lb.submitted && typeof d.lb.submitted === 'object') lb.submitted = d.lb.submitted;
@@ -416,8 +420,19 @@ const stars = Array.from({ length: 80 }, () => ({ x: Math.random(), y: Math.rand
 function spawnAnchor() {
   const difficulty = Math.min(dist * 1.4, 260);
   lastAnchorX += 175 + rand() * (120 + difficulty);
-  const y = H * (0.10 + rand() * (0.38 + Math.min(dist / 900, 0.14)));
-  anchors.push({ x: lastAnchorX, y, bob: rand() * 6.28, glow: rand() * 6.28, _ry: y });
+  let x = lastAnchorX;
+  let y = H * (0.10 + rand() * (0.38 + Math.min(dist / 900, 0.14)));
+  if (anchors.length === 0) {
+    // first lantern: keep it comfortably inside rope range of the lily pad and
+    // keep the opening swing's low point out of the water. Deterministic clamp
+    // with no extra RNG draws, and lastAnchorX is untouched, so the rest of
+    // the seeded layout is identical on every device.
+    x = Math.min(x, PAD_X + 190);
+    const dxp = x - PAD_X, fy = WATER_Y() - 34;
+    const minY = fy - Math.sqrt(Math.max(0, (MAX_ROPE - 40) ** 2 - dxp * dxp)) + 10;
+    y = Math.min(Math.max(y, minY), H * 0.44);
+  }
+  anchors.push({ x, y, bob: rand() * 6.28, glow: rand() * 6.28, _ry: y });
   if (rand() < 0.7) {
     flies.push({ x: lastAnchorX + 30 + rand() * 130, y: y + 70 + rand() * Math.max(60, WATER_Y() - y - 190), t: rand() * 6.28, eaten: false });
   }
@@ -425,7 +440,8 @@ function spawnAnchor() {
 
 function reset() {
   rand = mode === 'daily' ? mulberry32(dailyNum * 7919 + 13) : Math.random;
-  frog = { x: 120, y: H * 0.42, vx: 260, vy: -140, r: 20, squash: 0, blink: 0 };
+  frog = { x: PAD_X, y: WATER_Y() - 34, vx: 0, vy: 0, r: 20, squash: 0, blink: 0 };
+  launched = false; padLift = false;
   anchors = []; flies = []; particles = []; texts = []; ripples = []; trail = [];
   camX = 0; camShake = 0; holding = false; attached = null; ropeLen = 0; tongueT = 0;
   dist = 0; score = 0; flyCount = 0; skims = 0; combo = 0; comboT = 0; nextMile = 100;
@@ -441,6 +457,7 @@ function reset() {
 const msg = document.getElementById('msg');
 const el = id => document.getElementById(id);
 const fmtTime = t => Math.floor(t / 60) + ':' + String(Math.floor(t % 60)).padStart(2, '0');
+const fmtTimeT = t => fmtTime(t) + '.' + Math.floor((t % 1) * 10);
 function updateBankTags() {
   el('bankTag').textContent = '🪰 Bank: ' + bank;
   el('shopBank').textContent = '🪰 ' + bank + ' flies to spend';
@@ -1042,6 +1059,17 @@ function findAnchor(tx, ty) {
   }
   return best;
 }
+function tryAttach() {
+  const a = hasTap ? findAnchor(tapWX, tapWY) : findAnchor();
+  if (!a) return false;
+  attached = a;
+  ropeLen = Math.max(90, Math.hypot(a.x - frog.x, a._ry - frog.y) * 0.98);
+  tongueT = 0;
+  frog.squash = 0.35;
+  sAttach();
+  burst(a.x, a._ry, '#c9f76f', 6, 150, 0);
+  return true;
+}
 function burst(x, y, color, n = 12, spd = 260, grav = 0.5) {
   for (let i = 0; i < n; i++) {
     const a = Math.random() * 6.28, s = spd * (0.3 + Math.random() * 0.7);
@@ -1102,23 +1130,27 @@ function win() {
 function update(dt, rdt) {
   if (!started) return;
   if (dead) { deathT += rdt; updateFx(rdt); return; }
+
+  if (!launched) {
+    // resting on the lily pad: no gravity, no timer — the first successful
+    // grapple launches the run with the normal tongue pull
+    if (holding && !attached && tryAttach()) {
+      launched = true; padLift = true;
+      if (!grappledOnce) { grappledOnce = true; saveGame(); }
+    } else {
+      frog.squash = 0.05 + Math.sin(performance.now() * 0.0035) * 0.045;  // idle breathing
+      for (const f of flies) f.t += rdt * 4;
+      updateFx(rdt);
+      return;
+    }
+  }
   runTime += rdt;
 
   const target = (frog.y > WATER_Y() - 80 && frog.vy > -50) ? 0.4 : 1;
   timeScale += (target - timeScale) * Math.min(1, rdt * 8);
   dt *= timeScale;
 
-  if (holding && !attached) {
-    const a = hasTap ? findAnchor(tapWX, tapWY) : findAnchor();
-    if (a) {
-      attached = a;
-      ropeLen = Math.max(90, Math.hypot(a.x - frog.x, a._ry - frog.y) * 0.98);
-      tongueT = 0;
-      frog.squash = 0.35;
-      sAttach();
-      burst(a.x, a._ry, '#c9f76f', 6, 150, 0);
-    }
-  }
+  if (holding && !attached) tryAttach();
   tongueT = Math.min(1, tongueT + dt * 9);
 
   frog.vy += G * dt;
@@ -1159,7 +1191,9 @@ function update(dt, rdt) {
   if (frog.y < 18) { frog.y = 18; frog.vy = Math.abs(frog.vy) * 0.35; }
 
   const wy = WATER_Y();
-  if (frog.y > wy - 36 && !skimArmed) skimArmed = true;
+  if (frog.y < wy - 120) padLift = false;
+  // padLift keeps the lift-off from the pad from arming (and awarding) a skim
+  if (frog.y > wy - 36 && !skimArmed && !padLift) skimArmed = true;
   if (skimArmed && frog.y < wy - 120) {
     skimArmed = false; skims++; score += 25;
     floatText(frog.x, frog.y + 30, 'SKIM! +25', '#8fdcee', 24);
@@ -1392,6 +1426,34 @@ function render(t) {
       ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.28); ctx.fill();
     }
     ctx.globalAlpha = 1;
+
+    // first-time hint: pulsing prompt with an arrow toward the nearest lantern
+    if (!dead && !launched && !grappledOnce) {
+      const hintA = findAnchor();
+      ctx.globalAlpha = 0.55 + 0.45 * Math.sin(t * 0.005);
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 20px Trebuchet MS, sans-serif';
+      ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.lineWidth = 4;
+      ctx.strokeText('Tap a lantern!', frog.x, frog.y - 74);
+      ctx.fillStyle = '#ffe28a';
+      ctx.fillText('Tap a lantern!', frog.x, frog.y - 74);
+      if (hintA) {
+        const hx = frog.x, hy = frog.y - 52;
+        const ang2 = Math.atan2(hintA._ry - hy, hintA.x - hx);
+        const wob = 8 * (0.5 + 0.5 * Math.sin(t * 0.005));
+        const bx = hx + Math.cos(ang2) * (26 + wob), by = hy + Math.sin(ang2) * (26 + wob);
+        const tx2 = hx + Math.cos(ang2) * (54 + wob), ty2 = hy + Math.sin(ang2) * (54 + wob);
+        ctx.strokeStyle = '#ffe28a'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(tx2, ty2); ctx.stroke();
+        ctx.fillStyle = '#ffe28a';
+        ctx.beginPath();
+        ctx.moveTo(tx2 + Math.cos(ang2) * 11, ty2 + Math.sin(ang2) * 11);
+        ctx.lineTo(tx2 + Math.cos(ang2 + 2.4) * 9, ty2 + Math.sin(ang2 + 2.4) * 9);
+        ctx.lineTo(tx2 + Math.cos(ang2 - 2.4) * 9, ty2 + Math.sin(ang2 - 2.4) * 9);
+        ctx.closePath(); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
   }
 
   const water = ctx.createLinearGradient(0, wy, 0, H);
@@ -1402,6 +1464,19 @@ function render(t) {
     ctx.lineTo(camX + x, wy + Math.sin(t * 0.0022 + (camX + x) * 0.02) * 4 + Math.sin(t * 0.0009 + (camX + x) * 0.006) * 3);
   }
   ctx.lineTo(camX + W + 10, H + 10); ctx.lineTo(camX - 10, H + 10); ctx.fill();
+
+  // starting lily pad (decorative once the run is under way)
+  if (PAD_X > camX - 80 && PAD_X < camX + W + 80) {
+    ctx.fillStyle = '#2c6e38';
+    ctx.beginPath(); ctx.ellipse(PAD_X + 3, wy + 4, 46, 12, 0, 0, 6.28); ctx.fill();
+    ctx.fillStyle = '#46a055';
+    ctx.beginPath(); ctx.ellipse(PAD_X, wy, 44, 11, 0, 0, 6.28); ctx.fill();
+    ctx.strokeStyle = 'rgba(24,74,36,.55)'; ctx.lineWidth = 1.5;
+    for (const va of [-0.6, 0.1, 0.8]) {
+      ctx.beginPath(); ctx.moveTo(PAD_X, wy);
+      ctx.lineTo(PAD_X + Math.cos(va) * 38, wy + Math.sin(va) * 8); ctx.stroke();
+    }
+  }
 
   for (const a of anchors) {
     const ry = 2 * wy - a._ry;
@@ -1447,7 +1522,7 @@ function render(t) {
       ctx.fillStyle = 'rgba(255,226,138,.9)';
       ctx.font = '600 12px Trebuchet MS, sans-serif';
       const togo = Math.max(0, DAILY_GOAL_M - Math.floor(dist));
-      ctx.fillText(won ? '🏆 DAILY #' + dailyNum + ' COMPLETE' : '🏁 DAILY #' + dailyNum + ' · ' + togo + 'm TO GO · ' + fmtTime(runTime), W / 2, 80);
+      ctx.fillText(won ? '🏆 DAILY #' + dailyNum + ' COMPLETE' : '🏁 DAILY #' + dailyNum + ' · ' + togo + 'm TO GO · ' + fmtTimeT(runTime), W / 2, 80);
     }
     if (combo > 1 && comboT > 0 && !dead) {
       const cy = mode === 'daily' ? 102 : 86;
