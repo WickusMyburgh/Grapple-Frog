@@ -132,6 +132,9 @@
   .lbGap { text-align: center; opacity: .5; letter-spacing: 4px; margin: 2px 0 8px; }
   .lbHead { margin: 16px 0 8px; font-size: 14px; letter-spacing: 3px; color: #ffe28a; opacity: .9; text-align: center; }
   .lbHead.att { color: #8fdcee; }
+  .lbHead.all { color: #d9b8ff; margin-top: 26px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,.14); width: 100%; }
+  .lbRow.all { background: rgba(217,184,255,.06); border-color: rgba(217,184,255,.16); }
+  .lbRow .dn { width: 78px; text-align: right; opacity: .75; font-size: 12px; }
   .lbNote { font-size: 13px; opacity: .6; margin-bottom: 8px; text-align: center; }
   #lbState { margin-top: 18px; font-size: 14px; opacity: .85; text-align: center; line-height: 1.6; white-space: pre-line; }
   #lbClose { margin-top: 24px; }
@@ -160,7 +163,7 @@
   <h1 id="title">GRAPPLE FROG</h1>
   <div class="newbest" id="newbest">★ NEW BEST ★</div>
   <div id="modeTag"></div>
-  <p id="body"><b>Tap a lantern</b> to fling your tongue right at it — hold to swing, release to soar.<br>Chain flies for combos, skim the swamp for bonuses. In the Daily, race to the finish flag!</p>
+  <p id="body"><b>Tap &amp; hold a lantern</b> to fling your tongue at it and swing — release to let go and soar.<br>Chain flies for combos, skim the swamp for bonuses. In the Daily, race to the finish flag!</p>
   <div id="stats">
     <div><span id="lDist">DISTANCE</span><b id="sDist">0m</b></div>
     <div>FLIES<b id="sFlies">0</b></div>
@@ -801,14 +804,15 @@ const fmtLbTime = ms =>
   Math.floor(ms / 60000) + ':' + String(Math.floor(ms / 1000) % 60).padStart(2, '0') + '.' + Math.floor(ms % 1000 / 100);
 function lbAddRow(rank, r, isMe, kind) {
   const row = document.createElement('div');
-  row.className = 'lbRow' + (isMe ? ' me' : '');
+  row.className = 'lbRow' + (isMe ? ' me' : '') + (kind === 'all' ? ' all' : '');
   const mk = (cls, txt) => {
     const d = document.createElement('span'); d.className = cls; d.textContent = txt; row.appendChild(d);
   };
   mk('rk', rank >= 1 && rank <= 3 ? ['🥇', '🥈', '🥉'][rank - 1] : '#' + rank);
   mk('nm2', r.player_name + (isMe ? ' (you)' : ''));
   mk('tm', kind === 'dist' ? (r.distance_m ?? 0) + 'm' : fmtLbTime(r.time_ms));
-  mk('fl', '🪰 ' + (r.flies ?? 0));
+  if (kind === 'all') mk('dn', 'Daily #' + r.daily_num);
+  else mk('fl', '🪰 ' + (r.flies ?? 0));
   el('lbList').appendChild(row);
 }
 function lbAddGap() {
@@ -816,9 +820,9 @@ function lbAddGap() {
   gap.className = 'lbGap'; gap.textContent = '· · ·';
   el('lbList').appendChild(gap);
 }
-function lbAddHead(txt, att) {
+function lbAddHead(txt, cls) {
   const h = document.createElement('div');
-  h.className = 'lbHead' + (att ? ' att' : ''); h.textContent = txt;
+  h.className = 'lbHead' + (cls ? ' ' + cls : ''); h.textContent = txt;
   el('lbList').appendChild(h);
 }
 function lbAddNote(txt) {
@@ -850,7 +854,7 @@ async function ownDeepRank(kind) {
 }
 // renders one section; returns true if the player's own entry was shown in it
 async function renderSection(title, att, rawRows, board, kind, showMe) {
-  lbAddHead(title, att);
+  lbAddHead(title, att ? 'att' : '');
   if (!board.length) { lbAddNote(att ? 'No attempts yet.' : 'No finishers yet — be the first!'); return false; }
   board.slice(0, 10).forEach((r, i) => lbAddRow(i + 1, r, showMe && r.player_name === lb.name, kind));
   if (!showMe || !lb.name) return false;
@@ -870,9 +874,10 @@ async function openLeaderboard() {
   list.innerHTML = ''; state.textContent = 'Loading…';
   try {
     const base = `daily_scores?daily_num=eq.${dailyNum}&select=player_name,time_ms,flies,distance_m`;
-    const [finRows, attRows] = await Promise.all([
+    const [finRows, attRows, allRows] = await Promise.all([
       sbFetch(`${base}&time_ms=not.is.null&order=time_ms.asc&limit=200`).then(r => r.json()),
       sbFetch(`${base}&time_ms=is.null&order=distance_m.desc.nullslast&limit=200`).then(r => r.json()),
+      sbFetch(`daily_scores?select=player_name,time_ms,daily_num&time_ms=not.is.null&order=time_ms.asc&limit=100`).then(r => r.json()),
     ]);
     const fin = dedupeByName(finRows.filter(r => r && typeof r.time_ms === 'number'));
     const finNames = new Set(fin.map(r => r.player_name));
@@ -881,6 +886,11 @@ async function openLeaderboard() {
     list.innerHTML = '';
     const meInFin = await renderSection('🏁 FINISHERS', false, finRows, fin, 'time', true);
     await renderSection('💦 BEST ATTEMPTS', true, attRows, att, 'dist', !meInFin && lb.submitted[dailyNum] == null);
+    // all-time best finish times across every daily, one entry per player
+    const all = dedupeByName(allRows.filter(r => r && typeof r.time_ms === 'number' && typeof r.daily_num === 'number'));
+    lbAddHead('⭐ ALL-TIME BEST', 'all');
+    if (!all.length) lbAddNote('No finishes recorded yet.');
+    all.slice(0, 5).forEach((r, i) => lbAddRow(i + 1, r, r.player_name === lb.name, 'all'));
     state.textContent = '';
     if (lb.queue.some(q => q.daily_num === dailyNum)) {
       state.textContent = '⏳ Your latest result is queued and will upload when you\'re back online.';
@@ -991,7 +1001,7 @@ function makeShareCard(r) {
   g.fillText(r.won ? 'Beat my time!' : 'Can you beat me?', 500, 985);
   g.font = '600 24px Trebuchet MS, sans-serif';
   g.fillStyle = 'rgba(234,246,233,.55)';
-  g.fillText('🐸 GRAPPLE FROG — tap a lantern to swing, release to soar', 500, 1180);
+  g.fillText('🐸 GRAPPLE FROG — tap & hold a lantern to swing, release to let go', 500, 1180);
   return new Promise(res => c.toBlob(res, 'image/png'));
 }
 function roundRect(g, x, y, w, h, r) {
@@ -1434,9 +1444,9 @@ function render(t) {
       ctx.textAlign = 'center';
       ctx.font = 'bold 20px Trebuchet MS, sans-serif';
       ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.lineWidth = 4;
-      ctx.strokeText('Tap a lantern!', frog.x, frog.y - 74);
+      ctx.strokeText('Tap & hold a lantern!', frog.x, frog.y - 74);
       ctx.fillStyle = '#ffe28a';
-      ctx.fillText('Tap a lantern!', frog.x, frog.y - 74);
+      ctx.fillText('Tap & hold a lantern!', frog.x, frog.y - 74);
       if (hintA) {
         const hx = frog.x, hy = frog.y - 52;
         const ang2 = Math.atan2(hintA._ry - hy, hintA.x - hx);
