@@ -543,7 +543,7 @@ el('btnCopy').addEventListener('click', async e => {
   const line = r.won
     ? `🏆 COMPLETE in ${fmtTime(r.time)}  🪰 ${r.flies}  💦 ${r.skims}`
     : `📏 ${Math.floor(r.dist)}m  🪰 ${r.flies}  💦 ${r.skims}`;
-  const text = `${head}\n${line}\n⭐ Score: ${r.score}\nCan you beat me?`;
+  const text = `${head}\n${line}\n⭐ Score: ${r.score}\nCan you beat me?\n▶ Play: ${playUrl()}`;
   try { await navigator.clipboard.writeText(text); toast('Result copied — paste it anywhere!'); }
   catch { toast('Copy failed — your browser blocked it'); }
 });
@@ -553,7 +553,7 @@ el('btnShare').addEventListener('click', async e => {
   const blob = await makeShareCard(lastRun);
   const file = new File([blob], 'grapple-frog-run.png', { type: 'image/png' });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try { await navigator.share({ files: [file], title: 'Grapple Frog', text: 'Can you beat my run? 🐸' }); return; } catch {}
+    try { await navigator.share({ files: [file], title: 'Grapple Frog', text: 'Can you beat my run? 🐸\n▶ Play: ' + playUrl(), url: playUrl() }); return; } catch {}
   }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -930,6 +930,17 @@ el('iosTipClose').addEventListener('click', e => { e.stopPropagation(); el('iosT
 refreshInstallBtn();
 
 // ---------------- share card ----------------
+const CANONICAL_URL = 'https://wickusmyburgh.github.io/Grapple-Frog/';
+function playUrl() {
+  // live URL stripped of query/hash (so links follow the hosting), with the
+  // canonical address as fallback outside a web context (file://, etc.)
+  try {
+    if (location.protocol === 'https:' || location.protocol === 'http:') {
+      return (location.origin + location.pathname).replace(/index\.html$/, '');
+    }
+  } catch (e) {}
+  return CANONICAL_URL;
+}
 function makeShareCard(r) {
   const c = document.createElement('canvas');
   c.width = 1000; c.height = 1250;
@@ -1001,7 +1012,10 @@ function makeShareCard(r) {
   g.fillText(r.won ? 'Beat my time!' : 'Can you beat me?', 500, 985);
   g.font = '600 24px Trebuchet MS, sans-serif';
   g.fillStyle = 'rgba(234,246,233,.55)';
-  g.fillText('🐸 GRAPPLE FROG — tap & hold a lantern to swing, release to let go', 500, 1180);
+  g.fillText('🐸 GRAPPLE FROG — tap & hold a lantern to swing, release to let go', 500, 1156);
+  g.font = 'bold 34px Trebuchet MS, sans-serif';
+  g.fillStyle = '#9be564';
+  g.fillText('▶ Play: ' + playUrl(), 500, 1208);
   return new Promise(res => c.toBlob(res, 'image/png'));
 }
 function roundRect(g, x, y, w, h, r) {
