@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Grapple Frog</title>
 <meta name="theme-color" content="#0d1b2a">
 <link rel="manifest" href="manifest.webmanifest">
@@ -16,7 +16,11 @@
   /* canvas is sized & centered from JS to a scaled 1280x720 rect; body bg forms the letterbox bars */
   #game { display: block; position: absolute; }
   #hud {
-    position: fixed; top: var(--gy, 0); left: var(--gx, 0); width: var(--gw, 100%); padding: 12px 16px;
+    /* keep the HUD clear of notches/cutouts on native (safe-area insets), while
+       still hugging the letterboxed game rect on the web */
+    position: fixed; top: var(--gy, 0); left: var(--gx, 0); width: var(--gw, 100%);
+    padding: calc(12px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right))
+             12px calc(16px + env(safe-area-inset-left));
     display: flex; justify-content: space-between; align-items: flex-start;
     font-family: 'Trebuchet MS', 'Segoe UI Rounded', 'Segoe UI', sans-serif; color: #eaf6e9;
     pointer-events: none; text-shadow: 0 2px 6px rgba(0,0,0,.55);
@@ -250,6 +254,20 @@ const toVirtualX = clientX => (clientX - offX) / scale;
 const toVirtualY = clientY => (clientY - offY) / scale;
 resize();
 addEventListener('resize', resize);
+
+// ---------------- native haptics (Capacitor) ----------------
+// On a native build the Capacitor bridge injects window.Capacitor and registers
+// the Haptics plugin; on the web it's absent, so every call is a silent no-op.
+const Haptics = (() => {
+  const cap = window.Capacitor;
+  const native = !!(cap && typeof cap.isNativePlatform === 'function' && cap.isNativePlatform());
+  const H = native && cap.Plugins && cap.Plugins.Haptics;
+  const safe = fn => { if (H) { try { fn(); } catch (e) {} } };
+  return {
+    impact: style => safe(() => H.impact({ style })),          // 'LIGHT' | 'MEDIUM' | 'HEAVY'
+    notify: type => safe(() => H.notification({ type })),      // 'SUCCESS' | 'WARNING' | 'ERROR'
+  };
+})();
 
 // ---------------- constants ----------------
 const G = 2000;
@@ -1091,6 +1109,7 @@ function tryAttach() {
   tongueT = 0;
   frog.squash = 0.35;
   sAttach();
+  Haptics.impact('LIGHT');
   burst(a.x, a._ry, '#c9f76f', 6, 150, 0);
   return true;
 }
@@ -1117,6 +1136,7 @@ function gameOver() {
   dead = true; deathT = 0; holding = false; attached = null;
   camShake = 18;
   sSplash();
+  Haptics.impact('HEAVY');
   burst(frog.x, WATER_Y(), '#8fdcee', 30, 420, 1.2);
   burst(frog.x, WATER_Y(), '#cff3fb', 14, 240, 1.2);
   ripples.push({ x: frog.x, r: 6, life: 1 }, { x: frog.x, r: 2, life: 1.3 });
@@ -1130,6 +1150,7 @@ function win() {
   won = true; dead = true; deathT = 0; holding = false; attached = null;
   score += Math.floor(dist) + 100;          // +100 completion bonus
   sWin();
+  Haptics.notify('SUCCESS');
   camShake = 10;
   frog.vy = Math.min(frog.vy, -450);        // victory hop
   // confetti!
@@ -1257,6 +1278,7 @@ function update(dt, rdt) {
       burst(fx, fy, '#ffe28a', 10, 220, 0.4);
       floatText(fx, fy - 14, mult > 1 ? `+${10 * mult}  x${mult}` : '+10', '#ffe28a', mult > 1 ? 24 : 19);
       sFly(Math.min(combo, 6));
+      Haptics.impact('MEDIUM');
       frog.squash = 0.3;
     }
   }

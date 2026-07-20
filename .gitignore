@@ -1,0 +1,17 @@
+# Node
+node_modules/
+
+# The Android native project (android/) IS tracked — it carries the app's
+# portrait/splash/icon config. Its own android/.gitignore excludes build
+# artifacts, .gradle/, local.properties and keystores.
+#
+# The iOS native project (ios/) is generated on macOS with `npx cap add ios`
+# (see BUILDING.md). When generated it ships its own ios/.gitignore for Pods/
+# and build output, so it can be committed the same way as android/.
+
+# Build output / IDE cruft
+.gradle/
+*.iml
+.DS_Store
+.idea/
+dist/
