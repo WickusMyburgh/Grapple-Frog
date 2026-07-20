@@ -1,0 +1,17 @@
+{
+  "appId": "com.wickusmyburgh.grapplefrog",
+  "appName": "Grapple Frog",
+  "webDir": "www",
+  "backgroundColor": "#0d1b2a",
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 1200,
+      "launchAutoHide": true,
+      "backgroundColor": "#0d1b2a",
+      "showSpinner": false,
+      "androidScaleType": "CENTER_CROP",
+      "splashFullScreen": true,
+      "splashImmersive": true
+    }
+  }
+}
