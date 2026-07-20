@@ -102,6 +102,8 @@
   .card.equipped { border-color: #9be564; box-shadow: 0 0 16px rgba(155,229,100,.3); }
   .card canvas { width: 84px; height: 84px; }
   .card .nm { font-size: 13px; font-weight: bold; margin-top: 2px; }
+  .card .perk { font-size: 10px; line-height: 1.25; margin-top: 3px; min-height: 26px; color: #bfe0ff; opacity: .9; }
+  #skinNote { font-size: 11px; letter-spacing: 1px; opacity: .6; margin: -4px 0 4px; }
   .card button {
     margin-top: 8px; width: 100%; border: none; border-radius: 9px; padding: 7px 0;
     font-family: inherit; font-size: 12px; font-weight: bold; cursor: pointer;
@@ -195,6 +197,7 @@
   <h2>🛍️ POND SHOP</h2>
   <div id="shopBank"></div>
   <h3>FROG SKINS</h3>
+  <div id="skinNote">✨ Abilities apply in Endless — the Daily is a fair race for all</div>
   <div class="grid" id="skinGrid"></div>
   <h3>TONGUE TRAILS</h3>
   <div class="grid" id="trailGrid"></div>
@@ -283,11 +286,16 @@ const goalX = () => DAILY_GOAL_M * 50;
 // ---------------- cosmetics ----------------
 const SKINS = [
   { id: 'classic', name: 'Classic', price: 0,   body: '#59b64f', belly: '#8fd07f', line: '#3f8f3a' },
-  { id: 'toad',    name: 'Toad',    price: 15,  body: '#a3743f', belly: '#d2b184', line: '#7a5527', spots: true },
-  { id: 'ninja',   name: 'Ninja',   price: 30,  body: '#3b4252', belly: '#5c6678', line: '#2a3040', ninja: true },
-  { id: 'golden',  name: 'Golden',  price: 60,  body: '#e8c53a', belly: '#f7e58a', line: '#b8951f', sparkle: true },
-  { id: 'astro',   name: 'Astro',   price: 90,  body: '#dfe5ee', belly: '#ffffff', line: '#9aa6b8', helmet: true },
-  { id: 'royal',   name: 'Royal',   price: 120, body: '#7a5fb8', belly: '#a98fd8', line: '#59448c', crown: true },
+  { id: 'toad',    name: 'Toad',    price: 15,  body: '#a3743f', belly: '#d2b184', line: '#7a5527', spots: true,
+    perk: 'Sticky tongue — wider fly reach',        ability: { catch: 20 } },
+  { id: 'ninja',   name: 'Ninja',   price: 30,  body: '#3b4252', belly: '#5c6678', line: '#2a3040', ninja: true,
+    perk: 'Nimble — longer grapple + faster reel',  ability: { rope: 90, reel: 22 } },
+  { id: 'golden',  name: 'Golden',  price: 60,  body: '#e8c53a', belly: '#f7e58a', line: '#b8951f', sparkle: true,
+    perk: 'Midas — flies bank double',              ability: { coin: 2 } },
+  { id: 'astro',   name: 'Astro',   price: 90,  body: '#dfe5ee', belly: '#ffffff', line: '#9aa6b8', helmet: true,
+    perk: 'Low gravity — floatier, longer air',     ability: { grav: 0.8 } },
+  { id: 'royal',   name: 'Royal',   price: 120, body: '#7a5fb8', belly: '#a98fd8', line: '#59448c', crown: true,
+    perk: 'Royal launch — bigger boost + top speed', ability: { royal: true, spd: 1900 } },
 ];
 const TRAILS = [
   { id: 'pink',    name: 'Pink',    price: 0,  a: '#ff7a9c', b: '#ffb3c6' },
@@ -300,6 +308,10 @@ const owned = new Set(['classic', 'pink']);
 const equipped = { skin: 'classic', trail: 'pink' };
 const skinOf  = id => SKINS.find(s => s.id === id);
 const trailOf = id => TRAILS.find(s => s.id === id);
+// Equipped-skin ability, but ONLY in Endless — the Daily runs on baseline
+// physics/scoring for everyone so its shared leaderboard stays a fair race.
+const abilityOf = () => (mode === 'daily' ? null : (skinOf(equipped.skin).ability || null));
+const maxRope = () => { const a = abilityOf(); return MAX_ROPE + (a && a.rope || 0); };
 
 // ---------------- seeded rng for daily ----------------
 function mulberry32(seed) {
@@ -674,6 +686,9 @@ function buildShop() {
     else drawTrailIcon(g, item);
     const nm = document.createElement('div');
     nm.className = 'nm'; nm.textContent = item.name;
+    const perk = document.createElement('div');
+    perk.className = 'perk';
+    perk.textContent = kind === 'skin' ? (item.perk || 'No ability — classic feel') : '';
     const btn = document.createElement('button');
     ['pointerdown','pointerup'].forEach(ev => btn.addEventListener(ev, e => e.stopPropagation()));
     btn.addEventListener('click', e => {
@@ -694,7 +709,8 @@ function buildShop() {
       }
       refreshShop();
     });
-    card.append(c, nm, btn);
+    if (kind === 'skin') card.append(c, nm, perk, btn);
+    else card.append(c, nm, btn);
     card._item = item; card._kind = kind; card._btn = btn;
     grid.appendChild(card);
   };
@@ -1072,7 +1088,9 @@ function detach(boost) {
   attached = null;
   if (boost) {
     const s = Math.hypot(frog.vx, frog.vy);
-    if (s > 1) { const k = Math.min(1.07, (s + 60) / s); frog.vx *= k; frog.vy *= k; }
+    const ab = abilityOf();
+    const cap = ab && ab.royal ? 1.13 : 1.07, add = ab && ab.royal ? 95 : 60;
+    if (s > 1) { const k = Math.min(cap, (s + add) / s); frog.vx *= k; frog.vy *= k; }
     sRelease();
   }
 }
@@ -1092,7 +1110,7 @@ function findAnchor(tx, ty) {
   for (const a of anchors) {
     const dxf = a.x - frog.x, dyf = a._ry - frog.y;
     const dFrog = Math.hypot(dxf, dyf);
-    if (dFrog > MAX_ROPE || dFrog < 44) continue;
+    if (dFrog > maxRope() || dFrog < 44) continue;
     if (dxf < -120) continue;
     let s;
     if (tx != null) s = Math.hypot(a.x - tx, a._ry - ty);
@@ -1125,12 +1143,14 @@ function floatText(x, y, txt, color = '#ffe28a', size = 22) {
 
 // ---------------- end states ----------------
 function bankAndBest() {
-  bank += flyCount;
+  const a = abilityOf();
+  const gained = flyCount * (a && a.coin || 1);   // Golden 'Midas' banks double (Endless only)
+  bank += gained;
   const nb = score > bests[mode];
   bests[mode] = Math.max(bests[mode], score);
   document.getElementById('best').textContent = bests[mode];
   saveGame();
-  return nb;
+  return { nb, gained };
 }
 function gameOver() {
   dead = true; deathT = 0; holding = false; attached = null;
@@ -1141,10 +1161,10 @@ function gameOver() {
   burst(frog.x, WATER_Y(), '#cff3fb', 14, 240, 1.2);
   ripples.push({ x: frog.x, r: 6, life: 1 }, { x: frog.x, r: 2, life: 1.3 });
   score += Math.floor(dist);
-  const nb = bankAndBest();
+  const { nb, gained } = bankAndBest();
   lastRun = { mode, dist, flies: flyCount, skims, score, won: false, time: runTime };
   recordDailyAttempt();
-  showDeath(nb, flyCount);
+  showDeath(nb, gained);
 }
 function win() {
   won = true; dead = true; deathT = 0; holding = false; attached = null;
@@ -1165,10 +1185,10 @@ function win() {
   if (nbTime) bestDailyTime = runTime;
   dailyDone[dailyNum] = true;
   updateDailyLabel();
-  bankAndBest();
+  const { gained } = bankAndBest();
   lastRun = { mode, dist, flies: flyCount, skims, score, won: true, time: runTime };
   recordDailyResult();
-  showWin(nbTime, flyCount);
+  showWin(nbTime, gained);
 }
 
 // ---------------- update ----------------
@@ -1198,10 +1218,11 @@ function update(dt, rdt) {
   if (holding && !attached) tryAttach();
   tongueT = Math.min(1, tongueT + dt * 9);
 
-  frog.vy += G * dt;
+  const ab = abilityOf();                          // Endless-only skin perk (null in Daily)
+  frog.vy += G * (ab && ab.grav || 1) * dt;
   if (attached) {
     const ax = attached.x, ay = attached._ry;
-    ropeLen = Math.max(90, ropeLen - REEL * dt);
+    ropeLen = Math.max(90, ropeLen - (REEL + (ab && ab.reel || 0)) * dt);
     let dx = frog.x - ax, dy = frog.y - ay;
     let d = Math.hypot(dx, dy) || 1;
     if (d > ropeLen) {
@@ -1228,7 +1249,8 @@ function update(dt, rdt) {
     frog.vx *= (1 - 0.05 * dt);
   }
   const spd = Math.hypot(frog.vx, frog.vy);
-  if (spd > MAX_SPD) { frog.vx *= MAX_SPD / spd; frog.vy *= MAX_SPD / spd; }
+  const ms = ab && ab.spd || MAX_SPD;
+  if (spd > ms) { frog.vx *= ms / spd; frog.vy *= ms / spd; }
   frog.x += frog.vx * dt;
   frog.y += frog.vy * dt;
   frog.squash = Math.max(0, frog.squash - dt * 1.6);
@@ -1269,7 +1291,7 @@ function update(dt, rdt) {
     if (f.eaten) continue;
     f.t += dt * 4;
     const fx = f.x + Math.sin(f.t) * 14, fy = f.y + Math.cos(f.t * 1.3) * 10;
-    if (Math.hypot(fx - frog.x, fy - frog.y) < frog.r + 16) {
+    if (Math.hypot(fx - frog.x, fy - frog.y) < frog.r + 16 + (ab && ab.catch || 0)) {
       f.eaten = true; flyCount++;
       combo = Math.min(combo + 1, 8); comboT = 3;
       const mult = Math.min(combo, 5);
@@ -1412,7 +1434,7 @@ function render(t) {
     if (started && !dead && !attached) {
       const dxf = a.x - frog.x, dyf = ay - frog.y;
       const dFrog = Math.hypot(dxf, dyf);
-      if (dFrog <= MAX_ROPE && dFrog >= 44 && dxf >= -120) {
+      if (dFrog <= maxRope() && dFrog >= 44 && dxf >= -120) {
         ctx.strokeStyle = `rgba(255,255,255,${0.28 + glow * 0.3})`;
         ctx.lineWidth = 2; ctx.setLineDash([5, 6]);
         ctx.beginPath(); ctx.arc(a.x, ay, 17 + glow * 3, 0, 6.28); ctx.stroke();
