@@ -1,7 +1,9 @@
 // Grapple Frog service worker: precaches the game for offline play.
 // All paths are relative so the worker functions under a subpath
 // (e.g. GitHub Pages project sites) as well as at a domain root.
-const CACHE = 'grapple-frog-v1';
+// Bump this version whenever www/ changes so returning clients purge the old
+// cache and pick up the new game (activate deletes every cache != CACHE).
+const CACHE = 'grapple-frog-v2';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
@@ -23,8 +25,12 @@ self.addEventListener('fetch', e => {
   if (req.mode === 'navigate' || req.destination === 'document') {
     e.respondWith(
       fetch(req).then(res => {
-        const copy = res.clone();
-        caches.open(CACHE).then(c => c.put(req, copy));
+        // Only cache a genuine same-origin page, so a stray redirect or error
+        // response can never poison the offline copy of the game.
+        if (res.ok && !res.redirected && res.type === 'basic') {
+          const copy = res.clone();
+          caches.open(CACHE).then(c => c.put('./index.html', copy));
+        }
         return res;
       }).catch(() =>
         caches.match(req, { ignoreSearch: true }).then(hit => hit || caches.match('./index.html'))
