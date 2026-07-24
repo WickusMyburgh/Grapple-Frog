@@ -1097,6 +1097,12 @@ function detach(boost) {
 addEventListener('pointerdown', press);
 addEventListener('pointerup', release);
 addEventListener('pointercancel', release);
+// Safety net: if a pointer-initiated hold is active but the primary button is no
+// longer down (a pointerup that got dropped — released off-window, focus lost, or a
+// flaky mouse switch), let go on the next pointer move instead of staying stuck.
+addEventListener('pointermove', e => { if (holding && hasTap && !(e.buttons & 1)) release(); });
+// Losing window focus (alt-tab, notification) can swallow the button-up too.
+addEventListener('blur', release);
 addEventListener('keydown', e => { if (e.code === 'Space' && !e.repeat) { e.preventDefault(); press(null); } });
 addEventListener('keyup', e => { if (e.code === 'Space') release(); });
 addEventListener('contextmenu', e => e.preventDefault());
