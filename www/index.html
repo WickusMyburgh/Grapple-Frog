@@ -548,6 +548,7 @@ function startGame(m) {
   audio(); mode = m; started = true;
   msg.classList.add('hidden');
   reset();
+  track('run_start', m);
 }
 function toast(txt) {
   const tst = el('toast');
@@ -567,6 +568,7 @@ el('btnShop2').addEventListener('click', e => { e.stopPropagation(); openShop();
 el('shopClose').addEventListener('click', e => { e.stopPropagation(); el('shop').classList.remove('open'); });
 el('btnCopy').addEventListener('click', async e => {
   e.stopPropagation();
+  track('copy_tap');
   if (!lastRun) return;
   const r = lastRun;
   const head = r.mode === 'daily' ? `🐸 Grapple Frog Daily #${dailyNum}` : '🐸 Grapple Frog · Endless';
@@ -579,6 +581,7 @@ el('btnCopy').addEventListener('click', async e => {
 });
 el('btnShare').addEventListener('click', async e => {
   e.stopPropagation();
+  track('share_tap');
   if (!lastRun) return;
   const blob = await makeShareCard(lastRun);
   const file = new File([blob], 'grapple-frog-run.png', { type: 'image/png' });
@@ -697,6 +700,7 @@ function buildShop() {
       if (!isOwned) {
         if (bank >= item.price) {
           bank -= item.price; owned.add(item.id);
+          track('purchase', null, item.price);
           equipped[kind] = item.id;
           sBuy(); toast(`${item.name} unlocked & equipped!`);
           saveGame();
@@ -729,7 +733,7 @@ function refreshShop() {
     else { btn.textContent = '🪰 ' + item.price; btn.className = ''; btn.disabled = false; }
   }
 }
-function openShop() { refreshShop(); el('shop').classList.add('open'); }
+function openShop() { refreshShop(); el('shop').classList.add('open'); track('shop_open'); }
 buildShop();
 
 // ---------------- online daily leaderboard (Supabase REST, no SDK) ----------------
@@ -737,6 +741,59 @@ const SB_URL = 'https://svvtxxonagahxgftvnwx.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN2dnR4eG9uYWdhaHhnZnR2bnd4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQxODg5MTgsImV4cCI6MjA5OTc2NDkxOH0.McmBB-BDmxXa2PXceCikPEjh98cfUYWbMCuHjs9G5O4';
 const NAME_RE = /^[A-Za-z0-9]{2,12}$/;
 const lb = { name: null, submitted: {}, submittedDist: {}, queue: [] };
+
+// ---------------- privacy-respecting analytics ----------------
+// Anonymous, aggregate-only product analytics via the existing Supabase REST
+// setup. No third-party scripts, no personal data. A random UUID identifies the
+// device for counting distinct players only — it holds no personal information,
+// is never shown to the player, and lives solely in localStorage.
+//
+// events table: device_id (uuid) · event (enum) · mode (endless/daily|null) · value (int|null)
+//   session_start — one per page load
+//   run_start     — a run begins            · mode
+//   run_end       — splash (death)          · mode · value = distance (m)
+//   daily_win     — daily finished          · mode=daily · value = time (s)
+//   share_tap     — Share button used
+//   copy_tap      — Copy button used
+//   install       — PWA install completed (appinstalled)
+//   shop_open     — shop opened
+//   purchase      — cosmetic bought         · value = price (flies)
+//
+// Fire-and-forget: never blocks gameplay, fails silently, and coalesces bursts
+// into batched POSTs. Offline events are simply dropped (no queue by design).
+const deviceId = (() => {
+  const KEY = 'gfDeviceId';
+  const uuid = () => (crypto.randomUUID ? crypto.randomUUID()
+    : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+        const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+      }));
+  try {
+    let id = store && store.getItem(KEY);
+    if (!id) { id = uuid(); store && store.setItem(KEY, id); }
+    return id;
+  } catch (e) { return uuid(); }   // private mode: volatile id, still no PII
+})();
+let anQueue = [], anTimer = null;
+function flushAnalytics() {
+  clearTimeout(anTimer); anTimer = null;
+  if (!anQueue.length) return;
+  const batch = anQueue; anQueue = [];
+  try {
+    fetch(SB_URL + '/rest/v1/events', {
+      method: 'POST', keepalive: true,   // keepalive so in-flight events survive page unload
+      headers: { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+      body: JSON.stringify(batch),
+    }).catch(() => {});                    // fail silently (offline etc.)
+  } catch (e) {}
+}
+function track(event, mode = null, value = null) {
+  if (!deviceId) return;
+  anQueue.push({ device_id: deviceId, event, mode, value });
+  if (anQueue.length >= 10) flushAnalytics();
+  else { clearTimeout(anTimer); anTimer = setTimeout(flushAnalytics, 800); }
+}
+addEventListener('pagehide', flushAnalytics);
+document.addEventListener('visibilitychange', () => { if (document.hidden) flushAnalytics(); });
 async function sbFetch(path, opts = {}) {
   opts.headers = Object.assign(
     { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' },
@@ -948,7 +1005,7 @@ function refreshInstallBtn() {
   el('btnInstall').style.display = !isStandalone() && (installEvt || isIos()) ? '' : 'none';
 }
 addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; refreshInstallBtn(); });
-addEventListener('appinstalled', () => { installEvt = null; refreshInstallBtn(); });
+addEventListener('appinstalled', () => { installEvt = null; refreshInstallBtn(); track('install'); });
 el('btnInstall').addEventListener('click', async e => {
   e.stopPropagation();
   if (installEvt) {
@@ -1068,7 +1125,7 @@ function press(e) {
   if (el('shop').classList.contains('open') || el('lb').classList.contains('open') || el('nameDlg').classList.contains('open') || el('iosTip').classList.contains('open')) return;
   if (!started) return;
   if (dead) {
-    if (deathT > 0.5 && !msg.classList.contains('hidden')) { msg.classList.add('hidden'); reset(); }
+    if (deathT > 0.5 && !msg.classList.contains('hidden')) { msg.classList.add('hidden'); reset(); track('run_start', mode); }
     return;
   }
   // remember WHERE the player tapped, in world coordinates —
@@ -1170,6 +1227,7 @@ function gameOver() {
   const { nb, gained } = bankAndBest();
   lastRun = { mode, dist, flies: flyCount, skims, score, won: false, time: runTime };
   recordDailyAttempt();
+  track('run_end', mode, Math.floor(dist));   // splash: value = distance reached (m)
   showDeath(nb, gained);
 }
 function win() {
@@ -1194,6 +1252,7 @@ function win() {
   const { gained } = bankAndBest();
   lastRun = { mode, dist, flies: flyCount, skims, score, won: true, time: runTime };
   recordDailyResult();
+  track('daily_win', 'daily', Math.round(runTime));   // value = finish time (s)
   showWin(nbTime, gained);
 }
 
@@ -1710,6 +1769,7 @@ reset();
 started = false;
 showStart();
 requestAnimationFrame(loop);
+track('session_start');   // one per page load
 
 // ---------------- PWA: offline cache ----------------
 if ('serviceWorker' in navigator) {
