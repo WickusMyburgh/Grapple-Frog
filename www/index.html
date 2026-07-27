@@ -1179,12 +1179,20 @@ function press(e) {
     hasTap = true;
     tapWX = toVirtualX(e.clientX) + camX;
     tapWY = toVirtualY(e.clientY);
+    // Bind every later event for this pointer to the canvas, so a finger that
+    // slides off the canvas (or off-screen) still delivers its pointerup here.
+    if (e.pointerId != null) { try { cvs.setPointerCapture(e.pointerId); } catch (err) {} }
   } else {
     hasTap = false; // keyboard: fall back to auto-aim
   }
   holding = true;
 }
 function release() { if (attached) detach(true); holding = false; }
+// A pointer-driven hold ending: drop the capture, then let go.
+function endPointer(e) {
+  if (e && e.pointerId != null) { try { cvs.releasePointerCapture(e.pointerId); } catch (err) {} }
+  release();
+}
 function detach(boost) {
   if (!attached) return;
   attached = null;
@@ -1197,12 +1205,23 @@ function detach(boost) {
   }
 }
 addEventListener('pointerdown', press);
-addEventListener('pointerup', release);
-addEventListener('pointercancel', release);
-// Safety net: if a pointer-initiated hold is active but the primary button is no
-// longer down (a pointerup that got dropped — released off-window, focus lost, or a
-// flaky mouse switch), let go on the next pointer move instead of staying stuck.
-addEventListener('pointermove', e => { if (holding && hasTap && !(e.buttons & 1)) release(); });
+addEventListener('pointerup', endPointer);
+addEventListener('pointercancel', endPointer);
+addEventListener('pointermove', e => {
+  if (!holding || !hasTap) return;
+  // Safety net for MOUSE ONLY: a move with no primary button held means the
+  // pointerup was dropped (released off-window, focus lost, flaky switch), so let
+  // go rather than stay stuck. Touch and pen must never be released here — many
+  // mobile browsers report buttons === 0 during a touch move, which would cancel
+  // every tap-and-hold before the tongue could fire.
+  if (e.pointerType === 'mouse' && !(e.buttons & 1)) { release(); return; }
+  // Before the tongue latches on, dragging re-aims: the tongue goes for the
+  // lantern nearest wherever the finger is now.
+  if (!attached && typeof e.clientX === 'number') {
+    tapWX = toVirtualX(e.clientX) + camX;
+    tapWY = toVirtualY(e.clientY);
+  }
+});
 // Losing window focus (alt-tab, notification) can swallow the button-up too.
 addEventListener('blur', release);
 addEventListener('keydown', e => { if (e.code === 'Space' && !e.repeat) { e.preventDefault(); press(null); } });
