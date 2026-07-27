@@ -114,10 +114,13 @@ In Xcode:
 2. Pick a simulator or your plugged-in iPhone in the top device dropdown.
 3. Press the **▶ Run** button.
 
-### Lock to portrait on iOS
-Portrait is already forced on Android. On iOS, in Xcode select the **App**
-target → **General** tab → **Deployment Info** → under **Device Orientation**
-tick **only** *Portrait*.
+### Lock to landscape on iOS
+The game draws to a fixed **1280×720 landscape** canvas, so every platform is
+locked to landscape (see [Orientation](#orientation) below).
+
+Android is already handled. On iOS, in Xcode select the **App** target →
+**General** tab → **Deployment Info** → under **Device Orientation** tick
+**only** *Landscape Left* and *Landscape Right* (untick both Portrait boxes).
 
 ---
 
@@ -160,7 +163,36 @@ The app name ("Grapple Frog") lives in:
 
 ---
 
-## 5. Everyday workflow, in short
+## 5. Orientation
+
+The game renders to a **fixed 1280×720 landscape canvas**, so it is locked to
+landscape everywhere. If you ever need to change that, these are all the places
+orientation is set:
+
+| Platform | Where | Value |
+|----------|-------|-------|
+| **Android** | `android/app/src/main/AndroidManifest.xml` → `<activity android:name=".MainActivity">` | `android:screenOrientation="sensorLandscape"` |
+| **iOS** | Xcode → **App** target → **General** → **Deployment Info** → Device Orientation | Landscape Left + Landscape Right only |
+| **PWA / web install** | `www/manifest.webmanifest` | `"orientation": "landscape"` |
+| **Browser (any)** | `www/index.html` — the `#rotate` overlay | Prompts phones held in portrait to turn sideways |
+
+`sensorLandscape` lets the phone flip between both landscape directions but never
+rotates into portrait.
+
+> **Note:** `npx cap sync` does **not** rewrite `AndroidManifest.xml`, so this
+> setting is safe across syncs (Capacitor has no orientation option in
+> `capacitor.config.json`). It is only lost if you delete and regenerate the
+> `android/` folder with `npx cap add android` — in that case re-apply the
+> `android:screenOrientation` line above.
+
+Browsers cannot force a device to rotate, so the web build instead shows a
+full-screen "Rotate your device to play" prompt when a **phone-sized** screen is
+held in portrait. It clears itself as soon as the device is turned, and never
+appears on desktop or wide screens.
+
+---
+
+## 6. Everyday workflow, in short
 
 ```bash
 # edit the game

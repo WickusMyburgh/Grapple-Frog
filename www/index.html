@@ -122,6 +122,23 @@
     padding: 22px 14px 40px; overflow-y: auto;
   }
   #lb.open, #nameDlg.open, #iosTip.open { display: flex; }
+  /* portrait nudge — the game is a fixed 1280x720 landscape canvas. Native builds
+     lock to landscape; browsers can't force rotation, so phones get this prompt. */
+  #rotate {
+    position: fixed; inset: 0; z-index: 40; display: none;
+    flex-direction: column; align-items: center; justify-content: center; gap: 20px;
+    background: #0d1b2a; text-align: center; padding: 24px;
+    font-family: 'Trebuchet MS', 'Segoe UI Rounded', 'Segoe UI', sans-serif; color: #eaf6e9;
+  }
+  #rotate.open { display: flex; }
+  #rotate svg { width: 88px; height: 88px; animation: rotateHint 2.6s ease-in-out infinite; }
+  #rotate .rt { font-size: 20px; font-weight: bold; letter-spacing: 1px; color: #9be564; }
+  #rotate .rs { font-size: 14px; opacity: .75; max-width: 300px; line-height: 1.55; }
+  @keyframes rotateHint {
+    0%, 28% { transform: rotate(0deg); }
+    55%, 85% { transform: rotate(-90deg); }
+    100% { transform: rotate(0deg); }
+  }
   #lb h2 { font-size: 28px; color: #ffe28a; text-shadow: 0 3px 0 #a3742a; letter-spacing: 1px; }
   #lbSub { margin-top: 6px; font-size: 13px; letter-spacing: 2px; opacity: .8; }
   #lbList { margin-top: 18px; width: 100%; max-width: 420px; }
@@ -224,6 +241,15 @@
   <h2>📲 ADD TO HOME SCREEN</h2>
   <p>In Safari, tap the <b>Share</b> button (the square with an arrow pointing up), then scroll down and choose <b>“Add to Home Screen”</b>.<br><br>Grapple Frog installs like an app and works offline!</p>
   <div class="btnrow"><button class="btn" id="iosTipClose">Got it</button></div>
+</div>
+<div id="rotate">
+  <svg viewBox="0 0 100 100" aria-hidden="true">
+    <rect x="34" y="10" width="32" height="80" rx="7" fill="none" stroke="#9be564" stroke-width="4"/>
+    <line x1="45" y1="19" x2="55" y2="19" stroke="#9be564" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="50" cy="82" r="2.6" fill="#9be564"/>
+  </svg>
+  <div class="rt">Rotate your device to play</div>
+  <div class="rs">🐸 Grapple Frog is built for landscape — turn your phone sideways to jump in.</div>
 </div>
 <div id="toast"></div>
 <script>
@@ -1019,6 +1045,25 @@ el('btnInstall').addEventListener('click', async e => {
 });
 el('iosTipClose').addEventListener('click', e => { e.stopPropagation(); el('iosTip').classList.remove('open'); });
 refreshInstallBtn();
+
+// ---------------- portrait nudge (web fallback) ----------------
+// The game renders at a fixed 1280x720 landscape canvas. Native builds lock to
+// landscape (AndroidManifest / web manifest), but browsers can't force rotation —
+// so a phone held in portrait gets a friendly prompt that clears itself the moment
+// the device is turned. Purely presentational: the loop keeps running and no
+// gameplay state is touched. Desktop and wide screens never see it.
+const rotateEl = el('rotate');
+// swallow stray taps on the prompt so they can't reach the game's window handlers
+['pointerdown', 'pointerup'].forEach(ev => rotateEl.addEventListener(ev, e => e.stopPropagation()));
+function refreshRotateHint() {
+  const portrait = window.innerHeight > window.innerWidth;
+  const phoneSized = Math.min(window.innerWidth, window.innerHeight) <= 700;
+  const touch = (window.matchMedia && matchMedia('(pointer: coarse)').matches) || navigator.maxTouchPoints > 0;
+  rotateEl.classList.toggle('open', portrait && phoneSized && touch);
+}
+addEventListener('resize', refreshRotateHint);
+addEventListener('orientationchange', refreshRotateHint);
+refreshRotateHint();
 
 // ---------------- share card ----------------
 const CANONICAL_URL = 'https://wickusmyburgh.github.io/Grapple-Frog/';
