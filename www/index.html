@@ -39,9 +39,16 @@
     align-items: center; justify-content: center; text-align: center;
     font-family: 'Trebuchet MS', 'Segoe UI Rounded', 'Segoe UI', sans-serif; color: #eaf6e9;
     background: rgba(6,14,22,.5); backdrop-filter: blur(3px);
-    transition: opacity .35s; padding: 20px; overflow-y: auto;
+    transition: opacity .35s, visibility .35s; padding: 20px; overflow-y: auto;
   }
-  #msg.hidden { opacity: 0; pointer-events: none; }
+  /* visibility (not just pointer-events) is what actually takes the faded-out menu
+     out of hit testing: pointer-events is NOT inherited, so any child setting
+     `pointer-events: auto` re-enables itself over the parent's `none` and the
+     invisible buttons swallow gameplay taps. visibility IS inherited and a child
+     cannot override it back to visible while the parent is hidden. Transitioning it
+     alongside opacity keeps the element visible for the whole fade, then hides it.
+     Do not remove. */
+  #msg.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
   #msg h1 {
     font-size: clamp(32px, 8.5vw, 58px); letter-spacing: 1px; color: #9be564;
     text-shadow: 0 4px 0 #2c5b1e, 0 10px 30px rgba(0,0,0,.6);
@@ -61,7 +68,7 @@
   #stats div b { display: block; font-size: 24px; letter-spacing: 0; color: #fff; opacity: 1; }
   .btnrow { display: flex; gap: 10px; margin-top: 22px; flex-wrap: wrap; justify-content: center; }
   .btn {
-    pointer-events: auto; cursor: pointer; border: none; border-radius: 14px;
+    cursor: pointer; border: none; border-radius: 14px;
     padding: 13px 20px; font-family: inherit; font-size: 15px; font-weight: bold;
     color: #10240f; background: #9be564; box-shadow: 0 4px 0 #4d8a33, 0 8px 20px rgba(0,0,0,.4);
     letter-spacing: .5px; transition: transform .08s;
@@ -80,7 +87,7 @@
   .setLabel { font-size: 11px; letter-spacing: 3px; opacity: .55; }
   .segRow { display: flex; gap: 6px; }
   .seg {
-    pointer-events: auto; cursor: pointer; font-family: inherit; font-size: 12px; font-weight: bold;
+    cursor: pointer; font-family: inherit; font-size: 12px; font-weight: bold;
     padding: 8px 14px; border-radius: 10px; letter-spacing: .5px;
     background: rgba(255,255,255,.08); color: rgba(234,246,233,.7);
     border: 1px solid rgba(255,255,255,.18);
