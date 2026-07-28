@@ -74,6 +74,19 @@
     box-shadow: none; border: 1px solid rgba(255,255,255,.25);
   }
   .btn small { display: block; font-size: 11px; font-weight: 600; opacity: .75; letter-spacing: 1px; margin-top: 2px; }
+  /* ---------- settings (control scheme) ---------- */
+  #settings { display: none; margin-top: 20px; flex-direction: column; align-items: center; gap: 7px; }
+  #settings.show { display: flex; }
+  .setLabel { font-size: 11px; letter-spacing: 3px; opacity: .55; }
+  .segRow { display: flex; gap: 6px; }
+  .seg {
+    pointer-events: auto; cursor: pointer; font-family: inherit; font-size: 12px; font-weight: bold;
+    padding: 8px 14px; border-radius: 10px; letter-spacing: .5px;
+    background: rgba(255,255,255,.08); color: rgba(234,246,233,.7);
+    border: 1px solid rgba(255,255,255,.18);
+  }
+  .seg.on { background: #9be564; color: #10240f; border-color: #9be564; }
+  #schemeHint { font-size: 11px; letter-spacing: 0; opacity: .45; max-width: 320px; text-align: center; line-height: 1.45; }
   #msg .tap { display: none; margin-top: 20px; font-size: 12px; letter-spacing: 3px; text-transform: uppercase; opacity: .75; animation: pulse 1.4s infinite; }
   @keyframes pulse { 0%,100% { opacity:.35 } 50% { opacity:1 } }
   #toast {
@@ -200,6 +213,14 @@
     <button class="btn gold" id="btnShop">🛍️ Shop<small>SKINS &amp; TRAILS</small></button>
     <button class="btn ghost" id="btnLb">🏆 Leaderboard<small>DAILY TOP 10</small></button>
     <button class="btn ghost" id="btnInstall" style="display:none">📲 Install app</button>
+  </div>
+  <div id="settings">
+    <div class="setLabel">CONTROLS</div>
+    <div class="segRow">
+      <button class="seg" id="segAnywhere">Tap anywhere</button>
+      <button class="seg" id="segLantern">Tap the lantern</button>
+    </div>
+    <div id="schemeHint"></div>
   </div>
   <div class="btnrow" id="deathBtns" style="display:none">
     <button class="btn gold" id="btnLb2" style="display:none">🏆 Leaderboard</button>
@@ -426,6 +447,18 @@ let camX, camShake, holding, attached, ropeLen, tongueT;
 let dist, score, flyCount, skims, combo, comboT, nextMile;
 let dead, won, started = false, timeScale = 1, skimArmed, deathT, runTime;
 let launched = false, padLift = false;     // pre-launch idle on the lily pad
+// Control scheme:
+//   'anywhere' — a ring marks the lantern a tap will grab; tap anywhere to take it,
+//                drag before it latches to step the ring to another candidate.
+//   'lantern'  — tap the lantern itself; the aim sits AIM_LIFT above the finger so
+//                a fingertip never covers the target.
+// Touch devices default to 'anywhere' (no occlusion at all), desktop to 'lantern'.
+const isTouchDevice = () => (window.matchMedia && matchMedia('(pointer: coarse)').matches) || navigator.maxTouchPoints > 0;
+let scheme = isTouchDevice() ? 'anywhere' : 'lantern';
+let selAnchor = null, selLocked = false;   // 'anywhere' pre-selection (locked once dragged)
+let dragVX0 = 0, dragVY0 = 0;              // drag origin, virtual coords
+const AIM_LIFT = 40;                       // aim this far above a finger press
+const CYCLE_STEP = 45;                     // drag distance that steps the selection
 let missT = 0, missX = 0, missY = 0, lastMissAt = 0;   // failed-grab tongue flick
 const MISS_DUR = 0.26;      // seconds for the flick to shoot out and retract
 const MISS_COOLDOWN = 320;  // ms — caps the feedback at ~3/sec while held
@@ -454,7 +487,7 @@ function saveGame() {
   if (!store) return;
   try {
     store.setItem(SAVE_KEY, JSON.stringify({
-      bank, owned: [...owned], equipped, bests, bestDailyTime, muted, dailyDone, lb, grappledOnce
+      bank, owned: [...owned], equipped, bests, bestDailyTime, muted, dailyDone, lb, grappledOnce, scheme
     }));
   } catch (e) {}
 }
@@ -477,6 +510,7 @@ function loadGame() {
     if (typeof d.muted === 'boolean') { muted = d.muted; muteBtn.textContent = muted ? '🔇' : '🔊'; }
     if (d.dailyDone && typeof d.dailyDone === 'object') dailyDone = d.dailyDone;
     if (d.grappledOnce === true) grappledOnce = true;
+    if (d.scheme === 'anywhere' || d.scheme === 'lantern') scheme = d.scheme;
     if (d.lb && typeof d.lb === 'object') {
       if (typeof d.lb.name === 'string' && /^[A-Za-z0-9]{2,12}$/.test(d.lb.name)) lb.name = d.lb.name;
       if (d.lb.submitted && typeof d.lb.submitted === 'object') lb.submitted = d.lb.submitted;
@@ -520,6 +554,7 @@ function reset() {
   rand = mode === 'daily' ? mulberry32(dailyNum * 7919 + 13) : Math.random;
   frog = { x: PAD_X, y: WATER_Y() - 34, vx: 0, vy: 0, r: 20, squash: 0, blink: 0 };
   launched = false; padLift = false; missT = 0;
+  selAnchor = null; selLocked = false;
   anchors = []; flies = []; particles = []; texts = []; ripples = []; trail = [];
   camX = 0; camShake = 0; holding = false; attached = null; ropeLen = 0; tongueT = 0;
   dist = 0; score = 0; flyCount = 0; skims = 0; combo = 0; comboT = 0; nextMile = 100;
@@ -552,6 +587,7 @@ function showStart() {
   el('startBtns').style.display = 'flex';
   el('deathBtns').style.display = 'none';
   el('tap').style.display = 'none';
+  el('settings').classList.add('show');
   updateBankTags();
 }
 function fillEndStats(banked) {
@@ -567,6 +603,7 @@ function fillEndStats(banked) {
   el('startBtns').style.display = 'none';
   el('deathBtns').style.display = 'flex';
   el('tap').style.display = 'block';
+  el('settings').classList.remove('show');
 }
 function showDeath(newBest, banked) {
   el('title').textContent = 'SPLASH!';
@@ -602,7 +639,7 @@ function toast(txt) {
   clearTimeout(tst._t);
   tst._t = setTimeout(() => tst.classList.remove('show'), 2200);
 }
-for (const id of ['btnEndless','btnDaily','btnShop','btnShop2','btnShare','btnCopy','btnMenu','shopClose','btnLb','btnLb2','lbClose','nameSave','nameSkip','nameInput','btnInstall','iosTipClose']) {
+for (const id of ['btnEndless','btnDaily','btnShop','btnShop2','btnShare','btnCopy','btnMenu','shopClose','btnLb','btnLb2','lbClose','nameSave','nameSkip','nameInput','btnInstall','iosTipClose','segAnywhere','segLantern']) {
   ['pointerdown','pointerup'].forEach(ev => el(id).addEventListener(ev, e => e.stopPropagation()));
 }
 el('btnEndless').addEventListener('click', e => { e.stopPropagation(); startGame('endless'); });
@@ -1065,6 +1102,22 @@ el('btnInstall').addEventListener('click', async e => {
 el('iosTipClose').addEventListener('click', e => { e.stopPropagation(); el('iosTip').classList.remove('open'); });
 refreshInstallBtn();
 
+// ---------------- control scheme picker ----------------
+function refreshSchemeUI() {
+  el('segAnywhere').classList.toggle('on', scheme === 'anywhere');
+  el('segLantern').classList.toggle('on', scheme === 'lantern');
+  el('schemeHint').textContent = scheme === 'anywhere'
+    ? 'A ring marks your target — tap anywhere to grab it, or drag to pick another.'
+    : 'Tap the lantern you want. On touch, aim sits just above your fingertip.';
+}
+function setScheme(s) {
+  if (scheme === s) return;
+  scheme = s; selAnchor = null; selLocked = false;
+  refreshSchemeUI(); saveGame(); sEquip();
+}
+el('segAnywhere').addEventListener('click', e => { e.stopPropagation(); setScheme('anywhere'); });
+el('segLantern').addEventListener('click', e => { e.stopPropagation(); setScheme('lantern'); });
+
 // ---------------- portrait nudge (web fallback) ----------------
 // The game renders at a fixed 1280x720 landscape canvas. Native builds lock to
 // landscape (AndroidManifest / web manifest), but browsers can't force rotation —
@@ -1184,6 +1237,7 @@ function roundRect(g, x, y, w, h, r) {
 }
 
 // ---------------- input (tap-to-target) ----------------
+const aimLift = e => (e && e.pointerType && e.pointerType !== 'mouse') ? AIM_LIFT : 0;
 function press(e) {
   audio();
   if (el('shop').classList.contains('open') || el('lb').classList.contains('open') || el('nameDlg').classList.contains('open') || el('iosTip').classList.contains('open')) return;
@@ -1196,8 +1250,11 @@ function press(e) {
   // the tongue goes for the lantern nearest this point
   if (e && typeof e.clientX === 'number') {
     hasTap = true;
-    tapWX = toVirtualX(e.clientX) + camX;
-    tapWY = toVirtualY(e.clientY);
+    dragVX0 = toVirtualX(e.clientX); dragVY0 = toVirtualY(e.clientY);
+    tapWX = dragVX0 + camX;
+    // A fingertip covers what it touches, so aim above it. A mouse cursor occludes
+    // nothing, so it keeps aiming exactly where it clicked.
+    tapWY = dragVY0 - aimLift(e);
     // Bind every later event for this pointer to the canvas, so a finger that
     // slides off the canvas (or off-screen) still delivers its pointerup here.
     if (e.pointerId != null) { try { cvs.setPointerCapture(e.pointerId); } catch (err) {} }
@@ -1206,7 +1263,7 @@ function press(e) {
   }
   holding = true;
 }
-function release() { if (attached) detach(true); holding = false; }
+function release() { if (attached) detach(true); holding = false; selLocked = false; }
 // A pointer-driven hold ending: drop the capture, then let go.
 function endPointer(e) {
   if (e && e.pointerId != null) { try { cvs.releasePointerCapture(e.pointerId); } catch (err) {} }
@@ -1234,11 +1291,28 @@ addEventListener('pointermove', e => {
   // mobile browsers report buttons === 0 during a touch move, which would cancel
   // every tap-and-hold before the tongue could fire.
   if (e.pointerType === 'mouse' && !(e.buttons & 1)) { release(); return; }
-  // Before the tongue latches on, dragging re-aims: the tongue goes for the
-  // lantern nearest wherever the finger is now.
-  if (!attached && typeof e.clientX === 'number') {
-    tapWX = toVirtualX(e.clientX) + camX;
-    tapWY = toVirtualY(e.clientY);
+  if (typeof e.clientX !== 'number') return;
+  const vx = toVirtualX(e.clientX), vy = toVirtualY(e.clientY);
+  if (scheme === 'anywhere') {
+    // Dragging steps the ring to the next candidate that way, so the choice stays
+    // visible instead of hiding under the finger. A tap grabs instantly, so this
+    // also re-points an already-latched tongue — otherwise the ring and the
+    // grapple could disagree and cycling would never be reachable.
+    const dx = vx - dragVX0, dy = vy - dragVY0;
+    if (Math.hypot(dx, dy) >= CYCLE_STEP) {
+      cycleSelection(dx, dy);
+      dragVX0 = vx; dragVY0 = vy;
+      if (attached && selAnchor && selAnchor !== attached) {
+        const pick = selAnchor;
+        attached = null;
+        tryAttach();                       // same attach path — no boost, no physics change
+        selAnchor = pick; selLocked = true;
+      }
+    }
+  } else if (!attached) {
+    // dragging re-aims: the tongue goes for the lantern nearest the finger
+    tapWX = vx + camX;
+    tapWY = vy - aimLift(e);
   }
 });
 // Losing window focus (alt-tab, notification) can swallow the button-up too.
@@ -1270,9 +1344,42 @@ function findAnchor(tx, ty) {
   }
   return best;
 }
+// ---- 'tap anywhere' pre-selection ----
+// The ring shows exactly what a tap will grab. Auto-aim scoring picks it (prefers
+// ahead & reachable); a drag steps to another candidate and locks that choice for
+// the rest of the hold. Only fully in-reach lanterns are offered, so the ring never
+// promises a grab that would fail.
+const selCandidates = () => anchors.filter(a => reachOf(a) === 'yes');
+function updateSelection() {
+  if (scheme !== 'anywhere' || !started || dead) { selAnchor = null; selLocked = false; return; }
+  // while latched, the ring sits on what you're actually holding, so a drag can
+  // step onward from it
+  if (attached) { selAnchor = attached; selLocked = false; return; }
+  const valid = selAnchor && anchors.indexOf(selAnchor) >= 0 && reachOf(selAnchor) === 'yes';
+  if (!valid) selLocked = false;
+  if (!selLocked || !valid) selAnchor = findAnchor();   // auto-aim scoring
+}
+function cycleSelection(dx, dy) {
+  const cands = selCandidates();
+  if (!cands.length) return;
+  const cur = (selAnchor && cands.indexOf(selAnchor) >= 0) ? selAnchor : cands[0];
+  const horiz = Math.abs(dx) >= Math.abs(dy);
+  // step to the nearest candidate in the direction of the drag
+  const pool = cands.filter(a => a !== cur && (horiz
+    ? (dx > 0 ? a.x > cur.x : a.x < cur.x)
+    : (dy < 0 ? a._ry < cur._ry : a._ry > cur._ry)));
+  if (!pool.length) return;                            // nothing that way — keep the pick
+  pool.sort((p, q) => horiz ? Math.abs(p.x - cur.x) - Math.abs(q.x - cur.x)
+                            : Math.abs(p._ry - cur._ry) - Math.abs(q._ry - cur._ry));
+  selAnchor = pool[0];
+  selLocked = true;
+}
 function tryAttach() {
-  const a = hasTap ? findAnchor(tapWX, tapWY) : findAnchor();
+  const a = scheme === 'anywhere'
+    ? ((selAnchor && anchors.indexOf(selAnchor) >= 0 && reachOf(selAnchor) === 'yes') ? selAnchor : findAnchor())
+    : (hasTap ? findAnchor(tapWX, tapWY) : findAnchor());
   if (!a) return false;
+  selLocked = false;
   attached = a;
   ropeLen = Math.max(90, Math.hypot(a.x - frog.x, a._ry - frog.y) * 0.98);
   tongueT = 0;
@@ -1364,6 +1471,7 @@ function win() {
 function update(dt, rdt) {
   if (!started) return;
   if (dead) { deathT += rdt; updateFx(rdt); return; }
+  updateSelection();   // keeps the 'anywhere' ring on whatever a tap would grab
 
   if (!launched) {
     // resting on the lily pad: no gravity, no timer — the first successful
@@ -1612,6 +1720,21 @@ function render(t) {
       ctx.lineWidth = 2; ctx.setLineDash([5, 6]);
       ctx.beginPath(); ctx.arc(a.x, ay, 17 + glow * 3, 0, 6.28); ctx.stroke();
       ctx.setLineDash([]);
+    }
+    // 'tap anywhere': a bold ring marks the one THIS tap will take
+    if (live && scheme === 'anywhere' && a === selAnchor) {
+      ctx.strokeStyle = `rgba(255,226,138,${0.8 + glow * 0.2})`;
+      ctx.lineWidth = 3.5;
+      ctx.beginPath(); ctx.arc(a.x, ay, 23 + glow * 3, 0, 6.28); ctx.stroke();
+      ctx.fillStyle = `rgba(255,226,138,${0.5 + glow * 0.35})`;
+      for (const ang of [-Math.PI / 2, Math.PI / 2]) {   // little pointers above & below
+        const rr = 23 + glow * 3 + 7;
+        ctx.beginPath();
+        ctx.moveTo(a.x + Math.cos(ang) * rr, ay + Math.sin(ang) * rr);
+        ctx.lineTo(a.x + Math.cos(ang + 0.32) * (rr + 7), ay + Math.sin(ang + 0.32) * (rr + 7));
+        ctx.lineTo(a.x + Math.cos(ang - 0.32) * (rr + 7), ay + Math.sin(ang - 0.32) * (rr + 7));
+        ctx.closePath(); ctx.fill();
+      }
     }
     ctx.globalAlpha = 1;
   }
@@ -1891,6 +2014,7 @@ function loop(t) {
   requestAnimationFrame(loop);
 }
 loadGame();
+refreshSchemeUI();
 updateDailyLabel();
 flushQueue();     // retry any leaderboard submissions queued while offline
 reset();
