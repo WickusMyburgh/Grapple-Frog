@@ -338,6 +338,21 @@ const trailOf = id => TRAILS.find(s => s.id === id);
 // physics/scoring for everyone so its shared leaderboard stays a fair race.
 const abilityOf = () => (mode === 'daily' ? null : (skinOf(equipped.skin).ability || null));
 const maxRope = () => { const a = abilityOf(); return MAX_ROPE + (a && a.rope || 0); };
+// ---- grab reachability ----
+// One rule shared by targeting and rendering, so what looks grabbable IS grabbable.
+const GRAB_MIN = 26;       // closest grabbable distance (was 44 — too strict up close)
+const GRAB_SLACK = 1.15;   // an accurate tap still catches a lantern up to 15% past the rope
+const TAP_ASSIST = 90;     // how near the tap must land to earn that stretch
+//   'yes'   grabbable right now
+//   'slack' just out of rope, but an accurate tap still lands it
+//   'no'    unreachable from here
+function reachOf(a) {
+  const dxf = a.x - frog.x, dyf = a._ry - frog.y;
+  const d = Math.hypot(dxf, dyf);
+  if (dxf < -120 || d < GRAB_MIN) return 'no';
+  if (d <= maxRope()) return 'yes';
+  return d <= maxRope() * GRAB_SLACK ? 'slack' : 'no';
+}
 
 // ---------------- seeded rng for daily ----------------
 function mulberry32(seed) {
@@ -390,6 +405,7 @@ const sMile    = () => { tone(660, 660, 0.1, 'square', 0.08); tone(880, 880, 0.1
 const sBuy     = () => { tone(520, 780, 0.1, 'triangle', 0.14); tone(780, 1180, 0.14, 'triangle', 0.12, 0.08); };
 const sEquip   = () => tone(600, 880, 0.1, 'sine', 0.12);
 const sDeny    = () => tone(220, 140, 0.18, 'square', 0.1);
+const sMiss    = () => { tone(300, 170, 0.11, 'sine', 0.05); noise(0.05, 0.03, 600); };
 const sWin     = () => {
   const notes = [523, 659, 784, 1046, 1318];
   notes.forEach((f, i) => tone(f, f, 0.22, 'square', 0.1, i * 0.12));
@@ -410,6 +426,9 @@ let camX, camShake, holding, attached, ropeLen, tongueT;
 let dist, score, flyCount, skims, combo, comboT, nextMile;
 let dead, won, started = false, timeScale = 1, skimArmed, deathT, runTime;
 let launched = false, padLift = false;     // pre-launch idle on the lily pad
+let missT = 0, missX = 0, missY = 0, lastMissAt = 0;   // failed-grab tongue flick
+const MISS_DUR = 0.26;      // seconds for the flick to shoot out and retract
+const MISS_COOLDOWN = 320;  // ms — caps the feedback at ~3/sec while held
 let grappledOnce = false;                  // ever completed a first grapple (persisted)
 let hasTap = false, tapWX = 0, tapWY = 0;   // where the player tapped, in world coords
 let mode = 'endless';
@@ -500,7 +519,7 @@ function spawnAnchor() {
 function reset() {
   rand = mode === 'daily' ? mulberry32(dailyNum * 7919 + 13) : Math.random;
   frog = { x: PAD_X, y: WATER_Y() - 34, vx: 0, vy: 0, r: 20, squash: 0, blink: 0 };
-  launched = false; padLift = false;
+  launched = false; padLift = false; missT = 0;
   anchors = []; flies = []; particles = []; texts = []; ripples = []; trail = [];
   camX = 0; camShake = 0; holding = false; attached = null; ropeLen = 0; tongueT = 0;
   dist = 0; score = 0; flyCount = 0; skims = 0; combo = 0; comboT = 0; nextMile = 100;
@@ -1235,13 +1254,18 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) relea
 function findAnchor(tx, ty) {
   let best = null, bestScoreV = Infinity;
   for (const a of anchors) {
-    const dxf = a.x - frog.x, dyf = a._ry - frog.y;
-    const dFrog = Math.hypot(dxf, dyf);
-    if (dFrog > maxRope() || dFrog < 44) continue;
-    if (dxf < -120) continue;
+    const reach = reachOf(a);
+    if (reach === 'no') continue;
     let s;
-    if (tx != null) s = Math.hypot(a.x - tx, a._ry - ty);
-    else s = dFrog - dxf * 0.65 + (dyf > 0 ? dyf * 0.9 : 0);
+    if (tx != null) {
+      s = Math.hypot(a.x - tx, a._ry - ty);
+      // a lantern past the rope only catches if the tap landed right on it
+      if (reach === 'slack' && s > TAP_ASSIST) continue;
+    } else {
+      if (reach !== 'yes') continue;        // auto-aim never stretches the rope
+      const dxf = a.x - frog.x, dyf = a._ry - frog.y;
+      s = Math.hypot(dxf, dyf) - dxf * 0.65 + (dyf > 0 ? dyf * 0.9 : 0);
+    }
     if (s < bestScoreV) { bestScoreV = s; best = a; }
   }
   return best;
@@ -1257,6 +1281,22 @@ function tryAttach() {
   Haptics.impact('LIGHT');
   burst(a.x, a._ry, '#c9f76f', 6, 150, 0);
   return true;
+}
+// Try to grab, and on failure show the player WHY nothing happened: a short tongue
+// flick toward the tap that falls short and retracts, plus a soft miss blip.
+// Rate-limited so holding doesn't machine-gun it — retries themselves keep running
+// every frame, so a hold made slightly too early connects the moment it can.
+function attemptGrab() {
+  if (tryAttach()) return true;
+  const now = performance.now();
+  if (now - lastMissAt >= MISS_COOLDOWN) {
+    lastMissAt = now;
+    missT = 1;
+    if (hasTap) { missX = tapWX; missY = tapWY; }
+    else { missX = frog.x + 220; missY = frog.y - 90; }   // keyboard: flick ahead
+    sMiss();
+  }
+  return false;
 }
 function burst(x, y, color, n = 12, spd = 260, grav = 0.5) {
   for (let i = 0; i < n; i++) {
@@ -1328,7 +1368,7 @@ function update(dt, rdt) {
   if (!launched) {
     // resting on the lily pad: no gravity, no timer — the first successful
     // grapple launches the run with the normal tongue pull
-    if (holding && !attached && tryAttach()) {
+    if (holding && !attached && attemptGrab()) {
       launched = true; padLift = true;
       if (!grappledOnce) { grappledOnce = true; saveGame(); }
     } else {
@@ -1344,7 +1384,7 @@ function update(dt, rdt) {
   timeScale += (target - timeScale) * Math.min(1, rdt * 8);
   dt *= timeScale;
 
-  if (holding && !attached) tryAttach();
+  if (holding && !attached) attemptGrab();
   tongueT = Math.min(1, tongueT + dt * 9);
 
   const ab = abilityOf();                          // Endless-only skin perk (null in Daily)
@@ -1461,6 +1501,7 @@ function updateFx(dt) {
   for (const tx of texts) { tx.life -= dt; tx.y += tx.vy * dt; tx.vy *= (1 - 2 * dt); }
   texts = texts.filter(t => t.life > 0);
   camShake = Math.max(0, camShake - 40 * dt);
+  missT = Math.max(0, missT - dt / MISS_DUR);
 }
 
 // ---------------- render ----------------
@@ -1548,28 +1589,31 @@ function render(t) {
     a.bob += 0.016; a.glow += 0.035;
     const ay = a.y + Math.sin(a.bob) * 5;
     a._ry = ay;
+    const glow = 0.5 + 0.5 * Math.sin(a.glow);
+    // Fade lanterns the tongue can't reach from here, so grabbable ones read at a
+    // glance (same rule the targeting uses). Outside live play everything is lit.
+    const live = started && !dead && !attached;
+    const reach = live ? reachOf(a) : 'yes';
+    ctx.globalAlpha = reach === 'yes' ? 1 : reach === 'slack' ? 0.6 : 0.26;
     ctx.strokeStyle = '#37543a'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(a.x, 0); ctx.quadraticCurveTo(a.x + 7, ay * 0.5, a.x, ay - 14); ctx.stroke();
     ctx.fillStyle = '#3f6b40';
     ctx.beginPath(); ctx.ellipse(a.x + 6, ay * 0.4, 8, 3.5, 0.5, 0, 6.28); ctx.fill();
-    const glow = 0.5 + 0.5 * Math.sin(a.glow);
     ctx.fillStyle = `rgba(180,255,120,${0.10 + glow * 0.13})`;
     ctx.beginPath(); ctx.arc(a.x, ay, 26 + glow * 7, 0, 6.28); ctx.fill();
-    ctx.fillStyle = a === attached ? '#eaffb0' : '#c9f76f';
+    // out-of-reach bulbs also lose their colour, not just brightness
+    ctx.fillStyle = a === attached ? '#eaffb0' : (reach === 'yes' ? '#c9f76f' : '#93a688');
     ctx.beginPath(); ctx.arc(a.x, ay, 9, 0, 6.28); ctx.fill();
-    ctx.fillStyle = '#f8ffe0';
+    ctx.fillStyle = reach === 'yes' ? '#f8ffe0' : '#cfd8c4';
     ctx.beginPath(); ctx.arc(a.x - 2, ay - 2, 3.5, 0, 6.28); ctx.fill();
-    // show every grabbable lantern so players know their targets
-    if (started && !dead && !attached) {
-      const dxf = a.x - frog.x, dyf = ay - frog.y;
-      const dFrog = Math.hypot(dxf, dyf);
-      if (dFrog <= maxRope() && dFrog >= 44 && dxf >= -120) {
-        ctx.strokeStyle = `rgba(255,255,255,${0.28 + glow * 0.3})`;
-        ctx.lineWidth = 2; ctx.setLineDash([5, 6]);
-        ctx.beginPath(); ctx.arc(a.x, ay, 17 + glow * 3, 0, 6.28); ctx.stroke();
-        ctx.setLineDash([]);
-      }
+    // ring marks the ones you can grab right now
+    if (live && reach === 'yes') {
+      ctx.strokeStyle = `rgba(255,255,255,${0.28 + glow * 0.3})`;
+      ctx.lineWidth = 2; ctx.setLineDash([5, 6]);
+      ctx.beginPath(); ctx.arc(a.x, ay, 17 + glow * 3, 0, 6.28); ctx.stroke();
+      ctx.setLineDash([]);
     }
+    ctx.globalAlpha = 1;
   }
 
   if (started) {
@@ -1613,6 +1657,26 @@ function render(t) {
       ctx.beginPath(); ctx.moveTo(frog.x, frog.y); ctx.quadraticCurveTo(mx, my, ex, ey); ctx.stroke();
       ctx.fillStyle = colB;
       ctx.beginPath(); ctx.arc(ex, ey, 6, 0, 6.28); ctx.fill();
+    }
+
+    // missed grab: the tongue flicks toward the tap, falls short, and retracts —
+    // so a failed reach reads as "too far", not as the game ignoring you
+    if (missT > 0 && !attached) {
+      const tr = trailOf(equipped.trail);
+      const ease = Math.sin(missT * Math.PI);        // 0 -> out -> back to 0
+      const dx = missX - frog.x, dy = missY - frog.y;
+      const d = Math.hypot(dx, dy) || 1;
+      const reach = Math.min(d * 0.55, maxRope() * 0.45) * ease;
+      const ex2 = frog.x + dx / d * reach, ey2 = frog.y + dy / d * reach;
+      ctx.save();
+      ctx.globalAlpha = 0.8 * ease;
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = tr.rainbow ? '#ff9ec4' : tr.a;
+      ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.moveTo(frog.x, frog.y); ctx.lineTo(ex2, ey2); ctx.stroke();
+      ctx.fillStyle = tr.rainbow ? '#ffffff' : tr.b;
+      ctx.beginPath(); ctx.arc(ex2, ey2, 4.5, 0, 6.28); ctx.fill();
+      ctx.restore();
     }
 
     if (!dead || won || deathT < 0.1) drawFrog();
