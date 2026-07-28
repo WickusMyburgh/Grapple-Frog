@@ -15,3 +15,7 @@ node_modules/
 .DS_Store
 .idea/
 dist/
+
+# Release bundles — the itch.io ZIP is built from www/ on demand (see RELEASING.md)
+Archive.zip
+*.zip

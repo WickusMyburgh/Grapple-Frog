@@ -23,6 +23,7 @@ ios/                     native iOS project — generated on macOS, not in-repo 
   pages.yml                deploys www/ to GitHub Pages
 package.json             Capacitor dependencies + tooling
 BUILDING.md              step-by-step Android & iOS build guide
+RELEASING.md             release checklist (merge → Pages → itch ZIP → APK)
 ```
 
 The game is authored **once** in `www/index.html`. Every target loads that same
