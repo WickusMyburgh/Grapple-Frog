@@ -63,6 +63,15 @@ Edit `www/index.html` (and `sw.js` / manifest as needed). That's the whole game.
   silent no-op — nothing to guard at each call site.
 - **Splash screen** (`@capacitor/splash-screen`) — dark swamp background
   (`#0d1b2a`), configured in `capacitor.config.json`.
+- **Text entry** (`@capacitor/dialog`, `@capacitor/keyboard`) — HTML `<input>`s are
+  unusable in the WebView (focusing one resizes it and the page blanks out), so all
+  three text entry points — player name, league name, league join code — go through
+  the native `prompt()` on native and the HTML dialogs on the web. The switch is
+  `IS_NATIVE` in `www/index.html`; the shared helper is `nativePrompt()`, which
+  re-asks on invalid input and returns `null` on cancel. Backed by
+  `plugins.Keyboard.resize: "none"` (iOS **only** — the plugin ignores it on
+  Android) and `android:windowSoftInputMode="adjustNothing"` in the manifest.
+  See BUILDING.md → *Text entry and the keyboard*.
 - **Safe areas** — the HUD padding uses `env(safe-area-inset-*)` and the viewport
   is `viewport-fit=cover`, so the score/best/mute row never sits under a notch or
   camera cutout on native.

@@ -19,3 +19,6 @@ dist/
 # Release bundles — the itch.io ZIP is built from www/ on demand (see RELEASING.md)
 Archive.zip
 *.zip
+
+# Scratch copies the Playwright verification scripts drop into www/
+www/__*.html

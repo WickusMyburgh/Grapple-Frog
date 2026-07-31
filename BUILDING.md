@@ -185,12 +185,26 @@ rotates into portrait.
 > `android/` folder with `npx cap add android` — in that case re-apply the
 > `android:screenOrientation` line above.
 
-The same `<activity>` also carries `android:windowSoftInputMode="adjustResize"`.
-Landscape leaves very little room once the on-screen keyboard appears, and
-`adjustResize` is what makes Android shrink the WebView instead of sliding it
-up out of view — the game reads the resulting `window.visualViewport` size and
-keeps the player-name and league dialogs (field *and* confirm button) inside the
-strip that is still visible. Re-apply it too if you ever regenerate `android/`.
+### Text entry and the keyboard
+
+Typing into an HTML `<input>` inside the WebView is unusable: focusing one makes
+the WebView resize for the keyboard and the page collapses to a blank white
+screen, and locked landscape leaves almost nothing visible anyway. So **the app
+does not use the HTML fields at all**. All three text entry points — player name,
+league name, league join code — go through `@capacitor/dialog`'s native
+`prompt()`, which is a real platform dialog drawn above the WebView with the OS
+handling its own keyboard. The web build is unaffected and keeps the HTML
+dialogs; the switch is `IS_NATIVE` in `www/index.html`.
+
+Two settings back that up, and they are **not interchangeable**:
+
+| | Where | Why |
+|---|---|---|
+| iOS | `capacitor.config.json` → `plugins.Keyboard.resize: "none"` | Stops the WebView resizing when a keyboard appears. |
+| Android | `AndroidManifest.xml` → `android:windowSoftInputMode="adjustNothing"` | Same effect. **The Keyboard plugin's `resize` option is iOS-only** — its Android code reads only `resizeOnFullScreen` — so the manifest is the only lever here. |
+
+`adjustNothing` is on the same `<activity>` as the orientation lock, so re-apply
+it too if you ever regenerate `android/`.
 
 Browsers cannot force a device to rotate, so the web build instead shows a
 full-screen "Rotate your device to play" prompt when a **phone-sized** screen is

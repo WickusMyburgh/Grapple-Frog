@@ -186,6 +186,12 @@
      `keydown` listener misses it on IMEs that report the action as keyCode 229.
      `display: contents` keeps the flex layout exactly as it was without the form. */
   .fieldForm { display: contents; }
+  /* In the native app the fields are replaced by the platform's own prompt dialog
+     (see nativePrompt), so take the unusable HTML inputs out of the layout entirely
+     — otherwise tapping one focuses the WebView's broken keyboard path. The labels
+     stay: they still title the buttons that open the prompts. */
+  html.native .lgInput { display: none; }
+  html.native .lgLabel { margin-bottom: 2px; }
   /* ---------- private leagues ---------- */
   #leagues h2 { font-size: 26px; color: #d9b8ff; text-shadow: 0 3px 0 #4a2d6b; letter-spacing: 1px; }
   .lgLabel { font-size: 11px; letter-spacing: 3px; opacity: .55; margin: 18px 0 8px; }
@@ -473,6 +479,42 @@ const Haptics = (() => {
     notify: type => safe(() => H.notification({ type })),      // 'SUCCESS' | 'WARNING' | 'ERROR'
   };
 })();
+
+// ---------------- native text entry (Capacitor Dialog) ----------------
+// Typing into an HTML <input> is unusable inside the app's WebView: focusing one
+// makes the WebView resize for the keyboard and the page collapses to a blank white
+// screen, and in locked landscape the keyboard covers most of what is left anyway.
+// So on native we don't use the HTML fields at all — the Dialog plugin's prompt() is
+// a real platform dialog drawn above the WebView, with the OS handling its own
+// keyboard. The web build is untouched and keeps the HTML dialogs.
+const IS_NATIVE = !!(window.Capacitor
+  && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform()
+  && window.Capacitor.Plugins && window.Capacitor.Plugins.Dialog);
+document.documentElement.classList.toggle('native', IS_NATIVE);
+// Ask for one line of text, re-asking until it validates or the player cancels.
+// `validate` returns null when the value is good, or the message to lead the retry
+// with. Resolves to the accepted (normalised) string, or **null if cancelled** —
+// callers must treat null as "leave every stored value exactly as it was".
+async function nativePrompt({ title, message, okButtonTitle = 'OK', cancelButtonTitle = 'Cancel',
+                             inputPlaceholder = '', inputText = '', normalise = s => (s || '').trim(),
+                             validate }) {
+  const Dialog = window.Capacitor.Plugins.Dialog;
+  let msg = message, text = inputText;
+  for (;;) {
+    let res;
+    try {
+      res = await Dialog.prompt({ title, message: msg, okButtonTitle, cancelButtonTitle, inputPlaceholder, inputText: text });
+    } catch (e) {
+      return null;                      // plugin missing or dismissed oddly — treat as cancel
+    }
+    if (!res || res.cancelled) return null;
+    const value = normalise(res.value);
+    const err = validate(value);
+    if (!err) return value;
+    msg = err + '\n\n' + message;       // re-prompt, leading with what went wrong
+    text = value;                       // keep what they typed so it can be corrected
+  }
+}
 
 // ---------------- constants ----------------
 const G = 2000;
@@ -1170,21 +1212,37 @@ function recordDailyAttempt() {
   flushQueue();
 }
 // ------- player-name dialog -------
-function openNameDlg() {
-  el('nameErr').textContent = '';
-  el('nameInput').value = lb.name || '';
-  el('nameDlg').classList.add('open');
-  setTimeout(() => el('nameInput').focus(), 60);
-}
-el('nameSave').addEventListener('click', e => {
-  e.stopPropagation();
-  const v = el('nameInput').value.trim();
-  if (!NAME_RE.test(v)) { el('nameErr').textContent = '2–12 characters, letters and numbers only'; return; }
+const NAME_HINT = '2–12 characters, letters and numbers only';
+function saveName(v) {
   lb.name = v;
   for (const q of lb.queue) q.player_name = v;
   saveGame();
   el('nameDlg').classList.remove('open');
   flushQueue();
+}
+function openNameDlg() {
+  if (IS_NATIVE) { askNameNative(); return; }
+  el('nameErr').textContent = '';
+  el('nameInput').value = lb.name || '';
+  el('nameDlg').classList.add('open');
+  setTimeout(() => el('nameInput').focus(), 60);
+}
+async function askNameNative() {
+  const v = await nativePrompt({
+    title: 'Pick a player name',
+    message: "Get your run on today's leaderboard! Choose a name — " + NAME_HINT + '.',
+    okButtonTitle: 'Save', cancelButtonTitle: 'Not now',
+    inputPlaceholder: 'FrogChamp42', inputText: lb.name || '',
+    validate: v => NAME_RE.test(v) ? null : 'That name won\'t work — ' + NAME_HINT + '.',
+  });
+  if (v == null) return;               // cancelled: nothing saved, nothing changed
+  saveName(v);
+}
+el('nameSave').addEventListener('click', e => {
+  e.stopPropagation();
+  const v = el('nameInput').value.trim();
+  if (!NAME_RE.test(v)) { el('nameErr').textContent = NAME_HINT; return; }
+  saveName(v);
 });
 el('nameSkip').addEventListener('click', e => { e.stopPropagation(); el('nameDlg').classList.remove('open'); });
 // ------- board panel -------
@@ -1345,10 +1403,24 @@ const leagueInvite = () =>
   `Join my Grapple Frog league "${league.name}"!\nCode: ${league.code}\n▶ Play: ${playUrl()}`;
 el('btnLeagues').addEventListener('click', e => { e.stopPropagation(); openLeagues(); });
 el('lgClose').addEventListener('click', e => { e.stopPropagation(); el('leagues').classList.remove('open'); });
+const LG_NAME_HINT = 'Give your league a name of 2–24 characters.';
+const LG_CODE_HINT = `A join code is ${CODE_LEN} letters and numbers.`;
 el('lgCreate').addEventListener('click', async e => {
   e.stopPropagation();
-  const name = el('lgNameInput').value.trim();
-  if (!LEAGUE_NAME_RE.test(name)) { lgSay('Give your league a name of 2–24 characters.', 'err'); return; }
+  let name;
+  if (IS_NATIVE) {
+    name = await nativePrompt({
+      title: 'Create a league',
+      message: 'Name your league so friends recognise it. ' + LG_NAME_HINT,
+      okButtonTitle: 'Create', cancelButtonTitle: 'Cancel',
+      inputPlaceholder: 'Swamp Squad',
+      validate: v => LEAGUE_NAME_RE.test(v) ? null : LG_NAME_HINT,
+    });
+    if (name == null) { lgSay(''); return; }   // cancelled: no league created, nothing changed
+  } else {
+    name = el('lgNameInput').value.trim();
+    if (!LEAGUE_NAME_RE.test(name)) { lgSay(LG_NAME_HINT, 'err'); return; }
+  }
   lgSay('Creating…');
   try {
     league = await createLeague(name);
@@ -1365,8 +1437,21 @@ el('lgCreate').addEventListener('click', async e => {
 });
 el('lgJoin').addEventListener('click', async e => {
   e.stopPropagation();
-  const code = normCode(el('lgCodeInput').value);
-  if (code.length !== CODE_LEN) { lgSay(`A join code is ${CODE_LEN} letters and numbers.`, 'err'); return; }
+  let code;
+  if (IS_NATIVE) {
+    code = await nativePrompt({
+      title: 'Join a league',
+      message: 'Enter the code a friend sent you. ' + LG_CODE_HINT,
+      okButtonTitle: 'Join', cancelButtonTitle: 'Cancel',
+      inputPlaceholder: 'ABC234',
+      normalise: normCode,                       // trims, strips punctuation, uppercases
+      validate: v => v.length === CODE_LEN ? null : LG_CODE_HINT,
+    });
+    if (code == null) { lgSay(''); return; }     // cancelled: still in whatever league they were
+  } else {
+    code = normCode(el('lgCodeInput').value);
+    if (code.length !== CODE_LEN) { lgSay(LG_CODE_HINT, 'err'); return; }
+  }
   lgSay('Looking it up…');
   try {
     league = await lookupLeague(code);
