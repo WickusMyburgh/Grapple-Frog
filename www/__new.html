@@ -2464,6 +2464,17 @@ track('session_start');   // one per page load
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {});
 }
+
+window.__T = {
+  holding: () => holding,
+  started: () => started,
+  start: m => startGame(m),
+  openName: () => openNameDlg(),
+  anchors: () => anchors.map(a => ({ x: a.x, y: a._ry })),
+  consts: () => ({ MAX_ROPE, G, REEL, PUMP, MAX_SPD, GRAB_MIN, GRAB_SLACK, W, H }),
+  kbOpen: () => kbOpen,
+  scale: () => ({ scale, offX, offY }),
+};
 })();
 </script>
 </body>
