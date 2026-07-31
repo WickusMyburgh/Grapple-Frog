@@ -185,6 +185,13 @@ rotates into portrait.
 > `android/` folder with `npx cap add android` — in that case re-apply the
 > `android:screenOrientation` line above.
 
+The same `<activity>` also carries `android:windowSoftInputMode="adjustResize"`.
+Landscape leaves very little room once the on-screen keyboard appears, and
+`adjustResize` is what makes Android shrink the WebView instead of sliding it
+up out of view — the game reads the resulting `window.visualViewport` size and
+keeps the player-name and league dialogs (field *and* confirm button) inside the
+strip that is still visible. Re-apply it too if you ever regenerate `android/`.
+
 Browsers cannot force a device to rotate, so the web build instead shows a
 full-screen "Rotate your device to play" prompt when a **phone-sized** screen is
 held in portrait. It clears itself as soon as the device is turned, and never

@@ -3,7 +3,7 @@
 // (e.g. GitHub Pages project sites) as well as at a domain root.
 // Bump this version whenever www/ changes so returning clients purge the old
 // cache and pick up the new game (activate deletes every cache != CACHE).
-const CACHE = 'grapple-frog-v11';
+const CACHE = 'grapple-frog-v12';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
