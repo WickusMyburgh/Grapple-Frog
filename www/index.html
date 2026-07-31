@@ -13,6 +13,13 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 100%; height: 100%; overflow: hidden; background: #0d1b2a; touch-action: none;
     -webkit-user-select: none; user-select: none; }
+  /* The lockdown above is inherited by form fields, and inside a native WebView
+     that stops the caret appearing at all — fields become untypeable in the
+     Android/iOS app while working fine in desktop browsers. Give them back. */
+  input, textarea, [contenteditable] {
+    -webkit-user-select: text; user-select: text;
+    touch-action: auto; -webkit-touch-callout: default;
+  }
   /* canvas is sized & centered from JS to a scaled 1280x720 rect; body bg forms the letterbox bars */
   #game { display: block; position: absolute; }
   #hud {
@@ -136,12 +143,33 @@
   #shopClose { margin-top: 28px; }
   /* ---------- leaderboard & player-name dialog ---------- */
   #lb, #nameDlg, #iosTip, #leagues {
-    position: fixed; inset: 0; z-index: 25; display: none; flex-direction: column; align-items: center;
+    /* Pinned to the VISUAL viewport, not the layout one. When the on-screen keyboard
+       opens in the native app the layout viewport may not shrink at all (iOS never
+       shrinks it), so `inset: 0` would leave half the dialog — including its confirm
+       button — buried under the keyboard. --vvt/--vvh mirror window.visualViewport
+       (see syncViewport), so the dialog occupies exactly the strip that is still
+       visible and anything taller than it scrolls. */
+    position: fixed; left: 0; width: 100%;
+    top: var(--vvt, 0px); height: var(--vvh, 100%);
+    z-index: 25; display: none; flex-direction: column; align-items: center;
     background: rgba(6,14,22,.82); backdrop-filter: blur(5px);
     font-family: 'Trebuchet MS', 'Segoe UI Rounded', 'Segoe UI', sans-serif; color: #eaf6e9;
-    padding: 22px 14px 40px; overflow-y: auto;
+    padding: 22px 14px 40px; overflow-y: auto; overscroll-behavior: contain;
   }
   #lb.open, #nameDlg.open, #iosTip.open, #leagues.open { display: flex; }
+  /* Every dialog gets a corner ✕ so it is always dismissible without reaching for a
+     "Back" button the keyboard may be sitting on top of. Fixed to the visible strip,
+     so it stays put while the dialog body scrolls underneath it. */
+  .dlgX {
+    position: fixed; z-index: 2;
+    top: calc(var(--vvt, 0px) + 8px + env(safe-area-inset-top));
+    right: calc(10px + env(safe-area-inset-right));
+    width: 38px; height: 38px; border-radius: 11px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-family: inherit; font-size: 18px; line-height: 1;
+    background: rgba(6,14,22,.75); border: 1px solid rgba(255,255,255,.22); color: #eaf6e9;
+  }
+  .dlgX:active { transform: scale(.92); }
   /* ---------- private leagues ---------- */
   #leagues h2 { font-size: 26px; color: #d9b8ff; text-shadow: 0 3px 0 #4a2d6b; letter-spacing: 1px; }
   .lgLabel { font-size: 11px; letter-spacing: 3px; opacity: .55; margin: 18px 0 8px; }
@@ -214,7 +242,15 @@
   .lbNote { font-size: 13px; opacity: .6; margin-bottom: 8px; text-align: center; }
   #lbState { margin-top: 18px; font-size: 14px; opacity: .85; text-align: center; line-height: 1.6; white-space: pre-line; }
   #lbClose { margin-top: 24px; }
-  #nameDlg, #iosTip { justify-content: center; }
+  /* Safe centring: `justify-content: center` makes the top of overflowing content
+     unreachable in a scroll container — you cannot scroll past offset 0, so the
+     overflow spills out of both ends and half of it can never be brought into view.
+     Auto margins centre identically while keeping every pixel scrollable, which is
+     what lets the player reach both the field and the Save button once the keyboard
+     has shrunk the dialog to a strip. (.dlgX is out of flow, hence `.dlgX + *`.) */
+  #nameDlg, #iosTip { justify-content: flex-start; }
+  #nameDlg > .dlgX + *, #iosTip > .dlgX + * { margin-top: auto; }
+  #nameDlg > :last-child, #iosTip > :last-child { margin-bottom: auto; }
   #nameDlg h2, #iosTip h2 { font-size: 26px; color: #9be564; text-shadow: 0 3px 0 #2c5b1e; letter-spacing: 1px; }
   #nameDlg p, #iosTip p { margin-top: 10px; font-size: 14px; opacity: .85; max-width: 340px; text-align: center; line-height: 1.5; }
   #nameInput {
@@ -284,6 +320,7 @@
   <button class="btn ghost" id="shopClose">← Back</button>
 </div>
 <div id="lb">
+  <button class="dlgX" id="lbX" aria-label="Close">✕</button>
   <h2>🏆 DAILY LEADERBOARD</h2>
   <div id="lbSub"></div>
   <div id="lbTabs">
@@ -295,6 +332,7 @@
   <button class="btn ghost" id="lbClose">← Back</button>
 </div>
 <div id="nameDlg">
+  <button class="dlgX" id="nameX" aria-label="Close">✕</button>
   <h2>PICK A PLAYER NAME</h2>
   <p>Get your run on today's leaderboard! Choose a name — 2–12 letters or numbers. It's saved on this device and reused for every daily.</p>
   <input id="nameInput" maxlength="12" autocomplete="off" spellcheck="false" placeholder="FrogChamp42">
@@ -305,6 +343,7 @@
   </div>
 </div>
 <div id="leagues">
+  <button class="dlgX" id="lgX" aria-label="Close">✕</button>
   <h2>👥 PRIVATE LEAGUES</h2>
   <div class="lgHint">Race your friends on the same daily course. Everything still counts on the global board.</div>
   <div id="lgCurrent" style="display:none">
@@ -330,6 +369,7 @@
   <button class="btn ghost" id="lgClose">← Back</button>
 </div>
 <div id="iosTip">
+  <button class="dlgX" id="iosX" aria-label="Close">✕</button>
   <h2>📲 ADD TO HOME SCREEN</h2>
   <p>In Safari, tap the <b>Share</b> button (the square with an arrow pointing up), then scroll down and choose <b>“Add to Home Screen”</b>.<br><br>Grapple Frog installs like an app and works offline!</p>
   <div class="btnrow"><button class="btn" id="iosTipClose">Got it</button></div>
@@ -353,7 +393,12 @@ const ctx = cvs.getContext('2d');
 // in these coordinates, so the same daily seed yields identical layouts.
 const W = 1280, H = 720;
 let scale = 1, offX = 0, offY = 0, DPR = 1;
+let kbOpen = false;   // set by syncViewport() when the on-screen keyboard is up
 function resize() {
+  // Android's adjustResize shrinks the window while the keyboard is up. Re-letterboxing
+  // to that sliver would squash the game behind the dialog and then snap back, so hold
+  // the current layout; syncViewport() calls resize() again once the keyboard closes.
+  if (kbOpen) return;
   DPR = Math.min(window.devicePixelRatio || 1, 2);
   const ww = window.innerWidth, wh = window.innerHeight;
   scale = Math.min(ww / W, wh / H);
@@ -719,7 +764,7 @@ function toast(txt) {
   tst._t = setTimeout(() => tst.classList.remove('show'), 2200);
 }
 for (const id of ['btnEndless','btnDaily','btnShop','btnShop2','btnShare','btnCopy','btnMenu','shopClose','btnLb','btnLb2','lbClose','nameSave','nameSkip','nameInput','btnInstall','iosTipClose','segAnywhere','segLantern','btnLeagues','lgClose','lgCreate','lgJoin','lgCopy','lgShare','lgLeave',
-                   'lgNameInput','lgCodeInput','tabGlobal','tabLeague']) {
+                   'lgNameInput','lgCodeInput','tabGlobal','tabLeague','lbX','nameX','lgX','iosX']) {
   ['pointerdown','pointerup'].forEach(ev => el(id).addEventListener(ev, e => e.stopPropagation()));
 }
 el('btnEndless').addEventListener('click', e => { e.stopPropagation(); startGame('endless'); });
@@ -1574,10 +1619,86 @@ addEventListener('pointermove', e => {
 });
 // Losing window focus (alt-tab, notification) can swallow the button-up too.
 addEventListener('blur', release);
-addEventListener('keydown', e => { if (e.code === 'Space' && !e.repeat) { e.preventDefault(); press(null); } });
-addEventListener('keyup', e => { if (e.code === 'Space') release(); });
-addEventListener('contextmenu', e => e.preventDefault());
+// Anything typed into a field belongs to the field: without these guards a space in
+// a league name is swallowed AND fires a grapple, and long-press paste is blocked.
+const isFormField = t => !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+addEventListener('keydown', e => {
+  if (isFormField(e.target)) return;
+  if (e.code === 'Space' && !e.repeat) { e.preventDefault(); press(null); }
+});
+addEventListener('keyup', e => { if (!isFormField(e.target) && e.code === 'Space') release(); });
+addEventListener('contextmenu', e => { if (!isFormField(e.target)) e.preventDefault(); });
 document.addEventListener('visibilitychange', () => { if (document.hidden) release(); });
+
+// ---------------- on-screen keyboard & dialog dismissal ----------------
+// The app is locked to landscape, where Android's keyboard covers most of the screen
+// and iOS's WKWebView doesn't shrink the layout viewport at all. visualViewport is the
+// one signal both platforms agree on, so mirror it into --vvt/--vvh (the dialogs are
+// sized from those) and scroll the focused field — plus its confirm button — into the
+// strip that's left. Purely presentational: no gameplay state is touched.
+const vv = window.visualViewport;
+const CONFIRM_OF = { nameInput: 'nameSave', lgNameInput: 'lgCreate', lgCodeInput: 'lgJoin' };
+function vBounds() {
+  const top = vv ? vv.offsetTop : 0;
+  return { top, bottom: top + (vv ? vv.height : window.innerHeight) };
+}
+function keepFocusVisible() {
+  const a = document.activeElement;
+  if (!isFormField(a)) return;
+  const dlg = a.closest('#nameDlg, #leagues');
+  if (!dlg) return;
+  a.scrollIntoView({ block: 'center' });
+  // The confirm button sits right under the field; if the keyboard still leaves it
+  // below the fold the player can type but never submit, so nudge it up too.
+  const btn = el(CONFIRM_OF[a.id] || '');
+  if (!btn) return;
+  const over = btn.getBoundingClientRect().bottom - (vBounds().bottom - 8);
+  if (over > 0) dlg.scrollTop += over;
+}
+function syncViewport() {
+  if (!vv) return;
+  const rs = document.documentElement.style;
+  rs.setProperty('--vvt', vv.offsetTop + 'px');
+  rs.setProperty('--vvh', vv.height + 'px');
+  // Only a keyboard takes this much off the viewport — browser chrome never does.
+  const open = window.innerHeight - vv.height > 140;
+  if (open !== kbOpen) {
+    kbOpen = open;
+    document.documentElement.classList.toggle('kb-open', open);
+    if (!open) resize();          // restore the letterbox now the keyboard is gone
+  }
+  keepFocusVisible();
+}
+if (vv) {
+  vv.addEventListener('resize', syncViewport);
+  vv.addEventListener('scroll', syncViewport);
+  syncViewport();
+}
+for (const id of ['nameInput', 'lgNameInput', 'lgCodeInput']) {
+  // The keyboard animates in after focus, so re-check once it has settled.
+  el(id).addEventListener('focus', () => { keepFocusVisible(); setTimeout(keepFocusVisible, 300); });
+}
+// Dismissal that never depends on an off-screen button: the corner ✕, Escape, and —
+// once the keyboard is up — Escape first drops focus so the keyboard closes.
+const DIALOG_IDS = ['nameDlg', 'leagues', 'lb', 'iosTip', 'shop'];
+function closeTopDialog() {
+  const a = document.activeElement;
+  if (isFormField(a)) a.blur();
+  for (const id of DIALOG_IDS) {
+    const d = el(id);
+    if (d.classList.contains('open')) { d.classList.remove('open'); return true; }
+  }
+  return false;
+}
+for (const [x, dlg] of [['lbX', 'lb'], ['nameX', 'nameDlg'], ['lgX', 'leagues'], ['iosX', 'iosTip']]) {
+  el(x).addEventListener('click', e => {
+    e.stopPropagation();
+    const a = document.activeElement;
+    if (isFormField(a)) a.blur();
+    el(dlg).classList.remove('open');
+  });
+}
+addEventListener('keydown', e => { if (e.key === 'Escape' && closeTopDialog()) e.preventDefault(); });
 
 // ---------------- helpers ----------------
 // If (tx,ty) is given: pick the in-range lantern nearest the tap.
