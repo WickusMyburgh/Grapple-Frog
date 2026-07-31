@@ -135,13 +135,46 @@
   .card button:active:not(:disabled) { transform: scale(.95); }
   #shopClose { margin-top: 28px; }
   /* ---------- leaderboard & player-name dialog ---------- */
-  #lb, #nameDlg, #iosTip {
+  #lb, #nameDlg, #iosTip, #leagues {
     position: fixed; inset: 0; z-index: 25; display: none; flex-direction: column; align-items: center;
     background: rgba(6,14,22,.82); backdrop-filter: blur(5px);
     font-family: 'Trebuchet MS', 'Segoe UI Rounded', 'Segoe UI', sans-serif; color: #eaf6e9;
     padding: 22px 14px 40px; overflow-y: auto;
   }
-  #lb.open, #nameDlg.open, #iosTip.open { display: flex; }
+  #lb.open, #nameDlg.open, #iosTip.open, #leagues.open { display: flex; }
+  /* ---------- private leagues ---------- */
+  #leagues h2 { font-size: 26px; color: #d9b8ff; text-shadow: 0 3px 0 #4a2d6b; letter-spacing: 1px; }
+  .lgLabel { font-size: 11px; letter-spacing: 3px; opacity: .55; margin: 18px 0 8px; }
+  #lgCurrent, #lgForms { display: flex; flex-direction: column; align-items: center; width: 100%; max-width: 360px; }
+  #lgName { font-size: 22px; font-weight: bold; color: #eaf6e9; }
+  #lgCode {
+    margin-top: 8px; font-size: 30px; font-weight: bold; letter-spacing: 7px;
+    color: #ffe28a; background: rgba(255,226,138,.10); border: 1px dashed rgba(255,226,138,.45);
+    border-radius: 12px; padding: 8px 10px 8px 17px;
+  }
+  .lgHint { font-size: 11px; opacity: .5; max-width: 320px; text-align: center; line-height: 1.5; margin-top: 4px; }
+  .lgInput {
+    width: 240px; padding: 11px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,.3);
+    background: rgba(255,255,255,.08); color: #eaf6e9; font-family: inherit; font-size: 17px;
+    text-align: center; letter-spacing: 1px; outline: none;
+  }
+  .lgInput:focus { border-color: #9be564; }
+  #lgCodeInput { text-transform: uppercase; letter-spacing: 5px; font-weight: bold; }
+  #lgMsg { margin-top: 14px; font-size: 13px; min-height: 18px; text-align: center; line-height: 1.5; max-width: 330px; }
+  #lgMsg.err { color: #ff9c9c; }
+  #lgMsg.ok { color: #9be564; }
+  #lgClose { margin-top: 22px; }
+  #leagueTag { margin-top: 6px; font-size: 13px; letter-spacing: .5px; color: #d9b8ff; display: none; }
+  /* leaderboard scope tabs */
+  #lbTabs { display: none; gap: 6px; margin-top: 14px; }
+  #lbTabs.show { display: flex; }
+  .lbTab {
+    cursor: pointer; font-family: inherit; font-size: 12px; font-weight: bold; padding: 8px 14px;
+    border-radius: 10px; letter-spacing: .5px; max-width: 190px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap;
+    background: rgba(255,255,255,.08); color: rgba(234,246,233,.7); border: 1px solid rgba(255,255,255,.18);
+  }
+  .lbTab.on { background: #d9b8ff; color: #2a1740; border-color: #d9b8ff; }
   /* portrait nudge — the game is a fixed 1280x720 landscape canvas. Native builds
      lock to landscape; browsers can't force rotation, so phones get this prompt. */
   #rotate {
@@ -214,11 +247,13 @@
     <div>SCORE<b id="sScore">0</b></div>
   </div>
   <div id="bankTag">🪰 Bank: 0</div>
+  <div id="leagueTag"></div>
   <div class="btnrow" id="startBtns">
     <button class="btn" id="btnEndless">🐸 Endless<small>CLASSIC RUN</small></button>
     <button class="btn alt" id="btnDaily">🏁 Daily<small id="dailyLabel"></small></button>
     <button class="btn gold" id="btnShop">🛍️ Shop<small>SKINS &amp; TRAILS</small></button>
     <button class="btn ghost" id="btnLb">🏆 Leaderboard<small>DAILY TOP 10</small></button>
+    <button class="btn ghost" id="btnLeagues">👥 Leagues<small id="leaguesLabel">PLAY WITH FRIENDS</small></button>
     <button class="btn ghost" id="btnInstall" style="display:none">📲 Install app</button>
   </div>
   <div id="settings">
@@ -251,6 +286,10 @@
 <div id="lb">
   <h2>🏆 DAILY LEADERBOARD</h2>
   <div id="lbSub"></div>
+  <div id="lbTabs">
+    <button class="lbTab on" id="tabGlobal">🌍 Global</button>
+    <button class="lbTab" id="tabLeague">🏆 League</button>
+  </div>
   <div id="lbList"></div>
   <div id="lbState"></div>
   <button class="btn ghost" id="lbClose">← Back</button>
@@ -264,6 +303,31 @@
     <button class="btn" id="nameSave">Save &amp; Submit</button>
     <button class="btn ghost" id="nameSkip">Not now</button>
   </div>
+</div>
+<div id="leagues">
+  <h2>👥 PRIVATE LEAGUES</h2>
+  <div class="lgHint">Race your friends on the same daily course. Everything still counts on the global board.</div>
+  <div id="lgCurrent" style="display:none">
+    <div class="lgLabel">YOUR LEAGUE</div>
+    <div id="lgName"></div>
+    <div id="lgCode"></div>
+    <div class="btnrow">
+      <button class="btn alt" id="lgCopy">📋 Copy code</button>
+      <button class="btn" id="lgShare">📤 Invite</button>
+    </div>
+    <div class="lgHint">Send the code to a friend — anyone with it joins your league.</div>
+    <div class="btnrow"><button class="btn ghost" id="lgLeave">Leave league</button></div>
+  </div>
+  <div id="lgForms">
+    <div class="lgLabel">CREATE A LEAGUE</div>
+    <input class="lgInput" id="lgNameInput" maxlength="24" autocomplete="off" placeholder="Swamp Squad">
+    <div class="btnrow"><button class="btn" id="lgCreate">Create league</button></div>
+    <div class="lgLabel">JOIN WITH A CODE</div>
+    <input class="lgInput" id="lgCodeInput" maxlength="6" autocomplete="off" spellcheck="false" placeholder="ABC234">
+    <div class="btnrow"><button class="btn alt" id="lgJoin">Join league</button></div>
+  </div>
+  <div id="lgMsg"></div>
+  <button class="btn ghost" id="lgClose">← Back</button>
 </div>
 <div id="iosTip">
   <h2>📲 ADD TO HOME SCREEN</h2>
@@ -494,7 +558,8 @@ function saveGame() {
   if (!store) return;
   try {
     store.setItem(SAVE_KEY, JSON.stringify({
-      bank, owned: [...owned], equipped, bests, bestDailyTime, muted, dailyDone, lb, grappledOnce, scheme
+      bank, owned: [...owned], equipped, bests, bestDailyTime, muted, dailyDone, lb, grappledOnce, scheme,
+      league, lbTab
     }));
   } catch (e) {}
 }
@@ -518,6 +583,11 @@ function loadGame() {
     if (d.dailyDone && typeof d.dailyDone === 'object') dailyDone = d.dailyDone;
     if (d.grappledOnce === true) grappledOnce = true;
     if (d.scheme === 'anywhere' || d.scheme === 'lantern') scheme = d.scheme;
+    if (d.league && typeof d.league.code === 'string' && typeof d.league.name === 'string'
+        && normCode(d.league.code).length === CODE_LEN) {
+      league = { code: normCode(d.league.code), name: d.league.name };
+    }
+    if (d.lbTab === 'global' || d.lbTab === 'league') lbTab = d.lbTab;
     if (d.lb && typeof d.lb === 'object') {
       if (typeof d.lb.name === 'string' && /^[A-Za-z0-9]{2,12}$/.test(d.lb.name)) lb.name = d.lb.name;
       if (d.lb.submitted && typeof d.lb.submitted === 'object') lb.submitted = d.lb.submitted;
@@ -595,6 +665,7 @@ function showStart() {
   el('deathBtns').style.display = 'none';
   el('tap').style.display = 'none';
   el('settings').classList.add('show');
+  refreshLeagueTag();
   updateBankTags();
 }
 function fillEndStats(banked) {
@@ -611,6 +682,7 @@ function fillEndStats(banked) {
   el('deathBtns').style.display = 'flex';
   el('tap').style.display = 'block';
   el('settings').classList.remove('show');
+  el('leagueTag').style.display = 'none';
 }
 function showDeath(newBest, banked) {
   el('title').textContent = 'SPLASH!';
@@ -646,7 +718,8 @@ function toast(txt) {
   clearTimeout(tst._t);
   tst._t = setTimeout(() => tst.classList.remove('show'), 2200);
 }
-for (const id of ['btnEndless','btnDaily','btnShop','btnShop2','btnShare','btnCopy','btnMenu','shopClose','btnLb','btnLb2','lbClose','nameSave','nameSkip','nameInput','btnInstall','iosTipClose','segAnywhere','segLantern']) {
+for (const id of ['btnEndless','btnDaily','btnShop','btnShop2','btnShare','btnCopy','btnMenu','shopClose','btnLb','btnLb2','lbClose','nameSave','nameSkip','nameInput','btnInstall','iosTipClose','segAnywhere','segLantern','btnLeagues','lgClose','lgCreate','lgJoin','lgCopy','lgShare','lgLeave',
+                   'lgNameInput','lgCodeInput','tabGlobal','tabLeague']) {
   ['pointerdown','pointerup'].forEach(ev => el(id).addEventListener(ev, e => e.stopPropagation()));
 }
 el('btnEndless').addEventListener('click', e => { e.stopPropagation(); startGame('endless'); });
@@ -830,6 +903,20 @@ const SB_URL = 'https://svvtxxonagahxgftvnwx.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN2dnR4eG9uYWdhaHhnZnR2bnd4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQxODg5MTgsImV4cCI6MjA5OTc2NDkxOH0.McmBB-BDmxXa2PXceCikPEjh98cfUYWbMCuHjs9G5O4';
 const NAME_RE = /^[A-Za-z0-9]{2,12}$/;
 const lb = { name: null, submitted: {}, submittedDist: {}, queue: [] };
+// ---- private leagues ----
+// A player belongs to at most one league. Membership is just the code + name kept
+// locally; the server side is a `leagues` row plus a league_code stamped on the
+// player's daily_scores rows (which still appear on the global board).
+let league = null;          // { code, name } | null
+let lbTab = 'global';       // which leaderboard scope was last viewed
+const CODE_LEN = 6;
+// no I, L, O, 0 or 1 — codes get read aloud and typed from a group chat
+const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+const randomCode = () => Array.from({ length: CODE_LEN },
+  () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
+const LEAGUE_NAME_RE = /^.{2,24}$/;
+const normCode = s => (s || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LEN);
+const fail = kind => { const e = new Error(kind); e.kind = kind; return e; };
 
 // ---------------- privacy-respecting analytics ----------------
 // Anonymous, aggregate-only product analytics via the existing Supabase REST
@@ -888,8 +975,43 @@ async function sbFetch(path, opts = {}) {
     { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' },
     opts.headers || {});
   const res = await fetch(SB_URL + '/rest/v1/' + path, opts);
-  if (!res.ok) throw new Error('supabase ' + res.status);
+  if (!res.ok) {
+    const err = new Error('supabase ' + res.status);
+    err.status = res.status;
+    try { err.body = await res.text(); } catch (e) {}
+    throw err;
+  }
   return res;
+}
+// Create a league, redrawing the code on the (rare) unique collision. A 409 that
+// names the `name` column is a duplicate league name — no new code would help.
+async function createLeague(name) {
+  for (let i = 0; i < 6; i++) {
+    const code = randomCode();
+    try {
+      await sbFetch('leagues', {
+        method: 'POST', headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ code, name }),
+      });
+      return { code, name };
+    } catch (e) {
+      if (e.status === 409) {
+        if (/name/i.test(e.body || '')) throw fail('dupname');
+        continue;                                   // code taken — draw another
+      }
+      throw fail('net');
+    }
+  }
+  throw fail('codes');
+}
+async function lookupLeague(code) {
+  let rows;
+  try {
+    rows = await (await sbFetch(
+      `leagues?code=eq.${encodeURIComponent(code)}&select=code,name&limit=1`)).json();
+  } catch (e) { throw fail('net'); }
+  if (!rows.length) throw fail('notfound');
+  return { code: rows[0].code, name: rows[0].name };
 }
 async function submitScore(item) {
   try {
@@ -898,6 +1020,9 @@ async function submitScore(item) {
     const payload = isTime
       ? { time_ms: item.time_ms, flies: item.flies }
       : { distance_m: item.distance_m, flies: item.flies };
+    // stamp the current league on every row (null when not in one, so leaving a
+    // league and improving your score clears it). Global queries ignore it.
+    payload.league_code = league ? league.code : null;
     if (already != null) {
       // we already sent this kind of row for this daily: improve it in place
       const res = await sbFetch(
@@ -1018,16 +1143,20 @@ const dedupeByName = rows => {
   }
   return out;
 };
+// '' on the global board, or a league_code filter when the league tab is showing
+const scopeFilter = () =>
+  (lbTab === 'league' && league) ? `&league_code=eq.${encodeURIComponent(league.code)}` : '';
 async function ownDeepRank(kind) {
   // our row sits beyond the fetched window: ask the server for it + our rank
   const isTime = kind === 'time';
   const nullFlt = 'time_ms=' + (isTime ? 'not.is.null' : 'is.null');
+  const scope = scopeFilter();
   const own = await (await sbFetch(
-    `daily_scores?daily_num=eq.${dailyNum}&player_name=eq.${encodeURIComponent(lb.name)}&${nullFlt}` +
+    `daily_scores?daily_num=eq.${dailyNum}&player_name=eq.${encodeURIComponent(lb.name)}&${nullFlt}${scope}` +
     `&select=player_name,time_ms,flies,distance_m&order=${isTime ? 'time_ms.asc' : 'distance_m.desc'}&limit=1`)).json();
   if (!own.length) return null;
   const betterFlt = isTime ? `time_ms=lt.${own[0].time_ms}` : `distance_m=gt.${own[0].distance_m ?? 0}&${nullFlt}`;
-  const cnt = await sbFetch(`daily_scores?daily_num=eq.${dailyNum}&${betterFlt}&select=player_name`,
+  const cnt = await sbFetch(`daily_scores?daily_num=eq.${dailyNum}&${betterFlt}${scope}&select=player_name`,
     { method: 'HEAD', headers: { Prefer: 'count=exact' } });
   const total = parseInt((cnt.headers.get('content-range') || '/-1').split('/')[1], 10);
   return { rank: total >= 0 ? total + 1 : '?', row: own[0] };
@@ -1047,17 +1176,29 @@ async function renderSection(title, att, rawRows, board, kind, showMe) {
   }
   return false;
 }
+function refreshLbTabs() {
+  const tabs = el('lbTabs');
+  if (!league) { lbTab = 'global'; tabs.classList.remove('show'); return; }
+  tabs.classList.add('show');
+  el('tabLeague').textContent = '🏆 ' + league.name;
+  el('tabGlobal').classList.toggle('on', lbTab === 'global');
+  el('tabLeague').classList.toggle('on', lbTab === 'league');
+}
 async function openLeaderboard() {
   el('lb').classList.add('open');
-  el('lbSub').textContent = `DAILY #${dailyNum} · ${dailyDateStr.toUpperCase()}`;
+  if (lbTab === 'league' && !league) lbTab = 'global';
+  refreshLbTabs();
+  el('lbSub').textContent = `DAILY #${dailyNum} · ${dailyDateStr.toUpperCase()}`
+    + (lbTab === 'league' && league ? ` · ${league.name.toUpperCase()}` : '');
   const list = el('lbList'), state = el('lbState');
   list.innerHTML = ''; state.textContent = 'Loading…';
   try {
-    const base = `daily_scores?daily_num=eq.${dailyNum}&select=player_name,time_ms,flies,distance_m`;
+    const scope = scopeFilter();
+    const base = `daily_scores?daily_num=eq.${dailyNum}${scope}&select=player_name,time_ms,flies,distance_m`;
     const [finRows, attRows, allRows] = await Promise.all([
       sbFetch(`${base}&time_ms=not.is.null&order=time_ms.asc&limit=200`).then(r => r.json()),
       sbFetch(`${base}&time_ms=is.null&order=distance_m.desc.nullslast&limit=200`).then(r => r.json()),
-      sbFetch(`daily_scores?select=player_name,time_ms,daily_num&time_ms=not.is.null&order=time_ms.asc&limit=100`).then(r => r.json()),
+      sbFetch(`daily_scores?select=player_name,time_ms,daily_num${scope}&time_ms=not.is.null&order=time_ms.asc&limit=100`).then(r => r.json()),
     ]);
     const fin = dedupeByName(finRows.filter(r => r && typeof r.time_ms === 'number'));
     const finNames = new Set(fin.map(r => r.player_name));
@@ -1083,6 +1224,115 @@ async function openLeaderboard() {
 el('btnLb').addEventListener('click', e => { e.stopPropagation(); openLeaderboard(); });
 el('btnLb2').addEventListener('click', e => { e.stopPropagation(); openLeaderboard(); });
 el('lbClose').addEventListener('click', e => { e.stopPropagation(); el('lb').classList.remove('open'); });
+function setLbTab(t) {
+  if (lbTab === t) return;
+  lbTab = t; saveGame();          // remembered for next time
+  openLeaderboard();
+}
+el('tabGlobal').addEventListener('click', e => { e.stopPropagation(); setLbTab('global'); });
+el('tabLeague').addEventListener('click', e => { e.stopPropagation(); setLbTab('league'); });
+
+// ---------------- leagues UI ----------------
+function lgSay(text, kind) {
+  const m = el('lgMsg');
+  m.textContent = text;
+  m.className = kind || '';
+}
+function refreshLeaguesUI() {
+  const inLeague = !!league;
+  el('lgCurrent').style.display = inLeague ? 'flex' : 'none';
+  el('lgForms').style.display = inLeague ? 'none' : 'flex';
+  if (inLeague) {
+    el('lgName').textContent = league.name;
+    el('lgCode').textContent = league.code;
+  }
+  el('leaguesLabel').textContent = inLeague ? league.name.toUpperCase() : 'PLAY WITH FRIENDS';
+}
+function openLeagues() {
+  lgSay('');
+  el('lgNameInput').value = '';
+  el('lgCodeInput').value = '';
+  refreshLeaguesUI();
+  el('leagues').classList.add('open');
+}
+const leagueInvite = () =>
+  `Join my Grapple Frog league "${league.name}"!\nCode: ${league.code}\n▶ Play: ${playUrl()}`;
+el('btnLeagues').addEventListener('click', e => { e.stopPropagation(); openLeagues(); });
+el('lgClose').addEventListener('click', e => { e.stopPropagation(); el('leagues').classList.remove('open'); });
+el('lgNameInput').addEventListener('keydown', e => { if (e.key === 'Enter') el('lgCreate').click(); });
+el('lgCodeInput').addEventListener('keydown', e => { if (e.key === 'Enter') el('lgJoin').click(); });
+el('lgCreate').addEventListener('click', async e => {
+  e.stopPropagation();
+  const name = el('lgNameInput').value.trim();
+  if (!LEAGUE_NAME_RE.test(name)) { lgSay('Give your league a name of 2–24 characters.', 'err'); return; }
+  lgSay('Creating…');
+  try {
+    league = await createLeague(name);
+    lbTab = 'league'; saveGame();
+    refreshLeaguesUI(); refreshLeagueTag();
+    lgSay(`"${league.name}" is live! Share the code to invite friends.`, 'ok');
+    sBuy();
+  } catch (err) {
+    lgSay(err.kind === 'dupname' ? 'A league already uses that name — try another.'
+        : err.kind === 'codes'   ? 'Couldn\'t find a free join code. Please try again.'
+        : 'Couldn\'t reach the league server. Check your connection and try again.', 'err');
+    sDeny();
+  }
+});
+el('lgJoin').addEventListener('click', async e => {
+  e.stopPropagation();
+  const code = normCode(el('lgCodeInput').value);
+  if (code.length !== CODE_LEN) { lgSay(`A join code is ${CODE_LEN} letters and numbers.`, 'err'); return; }
+  lgSay('Looking it up…');
+  try {
+    league = await lookupLeague(code);
+    lbTab = 'league'; saveGame();
+    refreshLeaguesUI(); refreshLeagueTag();
+    lgSay(`You joined "${league.name}".`, 'ok');
+    sBuy();
+  } catch (err) {
+    lgSay(err.kind === 'notfound' ? 'No league has that code. Double-check it and try again.'
+        : 'Couldn\'t reach the league server. Check your connection and try again.', 'err');
+    sDeny();
+  }
+});
+el('lgCopy').addEventListener('click', async e => {
+  e.stopPropagation();
+  try { await navigator.clipboard.writeText(league.code); lgSay('Join code copied!', 'ok'); }
+  catch { lgSay('Copy failed — your browser blocked it. The code is ' + league.code, 'err'); }
+});
+el('lgShare').addEventListener('click', async e => {
+  e.stopPropagation();
+  const text = leagueInvite();
+  if (navigator.share) {
+    try { await navigator.share({ title: 'Grapple Frog league', text, url: playUrl() }); return; } catch (err) { if (err && err.name === 'AbortError') return; }
+  }
+  try { await navigator.clipboard.writeText(text); lgSay('Invite copied — paste it into a group chat!', 'ok'); }
+  catch { lgSay('Sharing isn\'t available here. Your code is ' + league.code, 'err'); }
+});
+el('lgLeave').addEventListener('click', e => {
+  e.stopPropagation();
+  const was = league.name;
+  league = null; lbTab = 'global'; saveGame();
+  refreshLeaguesUI(); refreshLeagueTag();
+  lgSay(`You left "${was}". Join another any time with a code.`, 'ok');
+  sEquip();
+});
+// today's league leader, shown on the main menu
+async function refreshLeagueTag() {
+  const tag = el('leagueTag');
+  if (!league) { tag.style.display = 'none'; return; }
+  tag.style.display = 'block';
+  tag.textContent = `👥 ${league.name}`;
+  try {
+    const rows = await (await sbFetch(
+      `daily_scores?daily_num=eq.${dailyNum}&league_code=eq.${encodeURIComponent(league.code)}` +
+      `&time_ms=not.is.null&select=player_name,time_ms&order=time_ms.asc&limit=1`)).json();
+    tag.textContent = rows.length
+      ? `👥 ${league.name} · today's leader: ${rows[0].player_name} ${fmtLbTime(rows[0].time_ms)}`
+      : `👥 ${league.name} · no finishers yet today`;
+  } catch (err) { /* offline: the league name alone is still useful */ }
+}
 
 // ---------------- install app button ----------------
 let installEvt = null;
@@ -1247,7 +1497,7 @@ function roundRect(g, x, y, w, h, r) {
 const aimLift = e => (e && e.pointerType && e.pointerType !== 'mouse') ? AIM_LIFT : 0;
 function press(e) {
   audio();
-  if (el('shop').classList.contains('open') || el('lb').classList.contains('open') || el('nameDlg').classList.contains('open') || el('iosTip').classList.contains('open')) return;
+  if (el('shop').classList.contains('open') || el('lb').classList.contains('open') || el('nameDlg').classList.contains('open') || el('iosTip').classList.contains('open') || el('leagues').classList.contains('open')) return;
   if (!started) return;
   if (dead) {
     if (deathT > 0.5 && !msg.classList.contains('hidden')) { msg.classList.add('hidden'); reset(); track('run_start', mode); }
@@ -2022,6 +2272,7 @@ function loop(t) {
 }
 loadGame();
 refreshSchemeUI();
+refreshLeaguesUI();
 updateDailyLabel();
 flushQueue();     // retry any leaderboard submissions queued while offline
 reset();
