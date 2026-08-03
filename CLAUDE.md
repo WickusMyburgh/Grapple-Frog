@@ -88,4 +88,17 @@ npx capacitor-assets generate --iconBackgroundColor '#0d1b2a' \
   --splashBackgroundColor '#0d1b2a' --splashBackgroundColorDark '#0d1b2a'
 ```
 
+> **Careful — that tool will re-break the splash.** It writes full-screen
+> `drawable-port-*/splash.png` and `drawable-land-*/splash.png` bitmaps. The launch
+> theme applies `@drawable/splash` as `android:background`, and a window background
+> that is a plain bitmap is **stretched to the window bounds with no regard for
+> aspect ratio** — in locked landscape Android picked the portrait asset and squashed
+> the frog flat. The splash is now `drawable/splash.xml`, a layer-list of a colour
+> layer plus `@drawable/splash_icon` (a square 200dp frog, one per density bucket)
+> drawn `android:gravity="center"` at its intrinsic size, so it cannot be distorted.
+> If you run the generator, delete the `splash.png` files it creates and restore
+> `drawable/splash.xml`. `androidScaleType` must stay `CENTER` for the same reason —
+> the plugin's own splash draws the same drawable, and `CENTER_CROP`/`FIT_XY` would
+> rescale it mid-launch.
+
 See BUILDING.md for the full Android and iOS build walkthrough.

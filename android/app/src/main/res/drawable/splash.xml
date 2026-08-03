@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The launch theme applies this as android:background. A window background that is a
+  plain <bitmap> gets STRETCHED to the window bounds with no regard for aspect ratio,
+  which is what flattened the frog in landscape (Android resolved the portrait
+  drawable-port-* asset and squashed it across a landscape window).
+
+  A layer-list fixes that by construction: the colour layer fills the window, and the
+  bitmap layer is drawn at its intrinsic size and centred — never scaled, so it can
+  never be distorted. splash_icon.png is density-bucketed (200dp square in every
+  bucket), so it comes out the same physical size on every screen.
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+  <item android:drawable="@color/splashBackground" />
+  <item>
+    <bitmap
+      android:src="@drawable/splash_icon"
+      android:gravity="center" />
+  </item>
+</layer-list>
