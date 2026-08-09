@@ -22,3 +22,6 @@ Archive.zip
 
 # Scratch copies the Playwright verification scripts drop into www/
 www/__*.html
+
+# Patch files (delivered work is applied, not committed)
+*.patch

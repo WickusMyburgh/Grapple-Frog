@@ -588,6 +588,93 @@ function updateDailyLabel() {
     (dailyDone[dailyNum] ? '✅ ' : '') + '#' + dailyNum + ' · ' + DAILY_GOAL_M + 'M RACE';
 }
 
+// ---------------- daily background themes ----------------
+// Every daily gets its own sky. This is DECORATION ONLY, and one rule keeps it that
+// way: the course is generated from `rand` (mulberry32 seeded on dailyNum) and every
+// single draw advances that stream, so a theme must never call it — one stray rand()
+// would shift every anchor and hand everyone a different course. Themes run on their
+// own generator instead, seeded from the same daily number so the whole world still
+// sees the same sky. Nothing here touches WATER_Y() or anything else the physics
+// reads: palettes, silhouettes and particles only.
+//
+// Palettes are hand-authored rather than generated, so every day is one someone
+// chose. Seeded variation on top (moon placement and phase, star density, fog,
+// ridge offset) keeps repeats of a theme from looking identical.
+const THEMES = [
+  { name: 'Swamp Night',
+    sky: ['#0e1e38', '#263450', '#3c4956'], star: '#dfe9ff', starN: 80,
+    moon: { disc: '#f2ecd8', halo: 'rgba(242,236,216,.13)', crater: 'rgba(200,195,180,.5)', r: 34 },
+    hills: ['#131e2a', '#0d151d'], ridge: 'hills',
+    fly: '#d6f78a', flyN: 26, water: ['rgba(56,124,148,.92)', 'rgba(18,46,66,.97)'],
+    ripple: 1, fog: 0, weather: null },
+  { name: 'Blood Moon',
+    sky: ['#26091a', '#43142a', '#5c2733'], star: '#ffd8dd', starN: 40,
+    moon: { disc: '#ff7a5c', halo: 'rgba(255,122,92,.20)', crater: 'rgba(170,60,45,.45)', r: 46 },
+    hills: ['#250d18', '#160710'], ridge: 'hills',
+    fly: '#ffb07a', flyN: 22, water: ['rgba(120,52,70,.92)', 'rgba(40,14,26,.97)'],
+    ripple: 1, fog: 0.05, weather: null },
+  { name: 'Aurora',
+    sky: ['#04121f', '#0a2436', '#143b45'], star: '#e6fbff', starN: 95,
+    moon: { disc: '#dff6ff', halo: 'rgba(180,240,255,.14)', crater: 'rgba(150,190,205,.45)', r: 26 },
+    hills: ['#08202a', '#04131a'], ridge: 'pines',
+    fly: '#9ef7d2', flyN: 30, water: ['rgba(44,132,140,.92)', 'rgba(12,44,56,.97)'],
+    ripple: 1, fog: 0, weather: null, aurora: ['#5ff2b0', '#4fd0ff', '#a97bff'] },
+  { name: 'Deep Fog',
+    sky: ['#1b2430', '#2c3742', '#46525c'], star: '#cdd8e4', starN: 22,
+    moon: { disc: '#cfd8e0', halo: 'rgba(207,216,224,.10)', crater: 'rgba(150,160,170,.35)', r: 38 },
+    hills: ['#222d38', '#18212a'], ridge: 'hills',
+    fly: '#c8e6a8', flyN: 18, water: ['rgba(80,110,124,.90)', 'rgba(30,44,54,.97)'],
+    ripple: 0.7, fog: 0.55, weather: null },
+  { name: 'First Light',
+    sky: ['#1b1b47', '#5a3a63', '#c07a5c'], star: '#ffe9d0', starN: 18,
+    moon: null,
+    hills: ['#2a1c33', '#1a1020'], ridge: 'hills',
+    fly: '#ffd98a', flyN: 24, water: ['rgba(150,110,110,.90)', 'rgba(44,28,44,.97)'],
+    ripple: 1, fog: 0.18, weather: null },
+  { name: 'Storm',
+    sky: ['#080d16', '#141c28', '#232c38'], star: '#9fb0c4', starN: 8,
+    moon: null,
+    hills: ['#0c131c', '#070c12'], ridge: 'hills',
+    fly: '#8fd0a0', flyN: 14, water: ['rgba(40,74,96,.94)', 'rgba(12,26,38,.98)'],
+    ripple: 1.8, fog: 0.12, weather: 'rain' },
+  { name: 'Frostfall',
+    sky: ['#0d1c2e', '#1e3550', '#3d5c74'], star: '#ffffff', starN: 70,
+    moon: { disc: '#eaf4ff', halo: 'rgba(234,244,255,.16)', crater: 'rgba(170,190,210,.45)', r: 36 },
+    hills: ['#16283a', '#0e1a28'], ridge: 'pines',
+    fly: '#bfe6ff', flyN: 16, water: ['rgba(84,140,164,.90)', 'rgba(22,52,72,.97)'],
+    ripple: 0.6, fog: 0.22, weather: 'snow' },
+  { name: 'Witchlight',
+    sky: ['#150a2a', '#2a1348', '#3d2a5c'], star: '#e6d4ff', starN: 55,
+    moon: { disc: '#b6ff8a', halo: 'rgba(182,255,138,.18)', crater: 'rgba(110,170,80,.45)', r: 32 },
+    hills: ['#1a0f2e', '#100820'], ridge: 'pines',
+    fly: '#c68aff', flyN: 38, water: ['rgba(88,64,140,.92)', 'rgba(28,16,52,.97)'],
+    ripple: 1, fog: 0.10, weather: null },
+];
+// Stride 5 is coprime with 8, so each theme comes up once every 8 days and the order
+// doesn't read as a plain cycle. `seed` drives the within-theme variation.
+function buildTheme(idx, seed) {
+  const base = THEMES[((idx % THEMES.length) + THEMES.length) % THEMES.length];
+  const r = mulberry32(seed);                 // its own stream — never the course's
+  const t = Object.assign({}, base);
+  t.moonX = 0.56 + r() * 0.30;
+  t.moonY = 0.10 + r() * 0.13;
+  t.phase = r() * 1.5 - 0.75;                 // 0 full, ±0.75 a thin crescent
+  t.fogA = base.fog * (0.7 + r() * 0.6);
+  t.ridge0 = r() * 6.28;
+  t.stars = Array.from({ length: Math.round(base.starN * (0.75 + r() * 0.5)) },
+    () => ({ x: r(), y: r() * 0.55, s: r() * 1.6 + 0.4, tw: r() * 6.28 }));
+  t.flies = Array.from({ length: base.flyN },
+    () => ({ x: r() * 3000, y: r(), s: r() * 0.5 + 0.3, t: r() * 6.28 }));
+  t.drops = base.weather
+    ? Array.from({ length: base.weather === 'snow' ? 90 : 140 },
+        () => ({ x: r(), y: r(), s: 0.5 + r(), sway: r() * 6.28 }))
+    : [];
+  return t;
+}
+const dailyTheme = () => buildTheme(dailyNum * 5, dailyNum * 104729 + 7);
+// The menu shows today's sky, so the daily's theme is a preview before you tap Play.
+let theme = dailyTheme();
+
 // ---------------- audio ----------------
 let AC = null, muted = false;
 function audio() { if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch(e){} } if (AC && AC.state === 'suspended') AC.resume(); }
@@ -727,10 +814,8 @@ function loadGame() {
   } catch (e) {}
 }
 
-const ambient = Array.from({ length: 26 }, () => ({
-  x: Math.random() * 3000, y: Math.random(), s: Math.random() * 0.5 + 0.3, t: Math.random() * 6.28
-}));
-const stars = Array.from({ length: 80 }, () => ({ x: Math.random(), y: Math.random() * 0.55, s: Math.random() * 1.6 + 0.4, tw: Math.random() * 6.28 }));
+// Stars, fireflies and weather now live on the theme (see buildTheme) so the daily's
+// sky is identical for everyone — they used to be per-device Math.random().
 
 function spawnAnchor() {
   const difficulty = Math.min(dist * 1.4, 260);
@@ -755,6 +840,11 @@ function spawnAnchor() {
 
 function reset() {
   rand = mode === 'daily' ? mulberry32(dailyNum * 7919 + 13) : Math.random;
+  // Chosen BEFORE the course is generated but from a separate generator, so it
+  // cannot perturb the `rand` stream below. Endless gets a random sky each run —
+  // there is nothing to keep fair there, and the variety is the point.
+  theme = mode === 'daily' ? dailyTheme()
+        : buildTheme(Math.floor(Math.random() * THEMES.length), (Math.random() * 1e9) | 0);
   frog = { x: PAD_X, y: WATER_Y() - 34, vx: 0, vy: 0, r: 20, squash: 0, blink: 0 };
   launched = false; padLift = false; missT = 0;
   selAnchor = null; selLocked = false;
@@ -785,7 +875,12 @@ function showStart() {
   el('title').classList.remove('win');
   el('body').style.display = 'block';
   el('newbest').style.display = 'none';
-  el('modeTag').style.display = 'none';
+  // The menu previews today's daily sky and names it. This has to set the theme, not
+  // just read it: `mode` starts as 'endless', so the startup reset() would otherwise
+  // leave a random endless sky behind the label claiming to be tonight's swamp.
+  theme = dailyTheme();
+  el('modeTag').style.display = 'block';
+  el('modeTag').textContent = `TONIGHT'S SWAMP · ${theme.name.toUpperCase()}`;
   el('stats').style.display = 'none';
   el('startBtns').style.display = 'flex';
   el('deathBtns').style.display = 'none';
@@ -796,7 +891,9 @@ function showStart() {
 }
 function fillEndStats(banked) {
   el('modeTag').style.display = 'block';
-  el('modeTag').textContent = mode === 'daily' ? `DAILY #${dailyNum} · ${dailyDateStr.toUpperCase()}` : 'ENDLESS MODE';
+  el('modeTag').textContent = mode === 'daily'
+    ? `DAILY #${dailyNum} · ${dailyDateStr.toUpperCase()} · ${theme.name.toUpperCase()}`
+    : `ENDLESS MODE · ${theme.name.toUpperCase()}`;
   el('body').style.display = 'none';
   el('stats').style.display = 'flex';
   el('sFlies').textContent = flyCount;
@@ -859,7 +956,9 @@ el('btnCopy').addEventListener('click', async e => {
   track('copy_tap');
   if (!lastRun) return;
   const r = lastRun;
-  const head = r.mode === 'daily' ? `🐸 Grapple Frog Daily #${dailyNum}` : '🐸 Grapple Frog · Endless';
+  const head = r.mode === 'daily'
+    ? `🐸 Grapple Frog Daily #${dailyNum} · ${r.theme}`
+    : '🐸 Grapple Frog · Endless';
   const line = r.won
     ? `🏆 COMPLETE in ${fmtTime(r.time)}  🪰 ${r.flies}  💦 ${r.skims}`
     : `📏 ${Math.floor(r.dist)}m  🪰 ${r.flies}  💦 ${r.skims}`;
@@ -1579,21 +1678,25 @@ function makeShareCard(r) {
   const c = document.createElement('canvas');
   c.width = 1000; c.height = 1250;
   const g = c.getContext('2d');
+  // The card wears the same sky as the run it is bragging about.
+  const T = theme;
   const sky = g.createLinearGradient(0, 0, 0, 1250);
-  sky.addColorStop(0, '#0e1e38'); sky.addColorStop(0.55, '#263450'); sky.addColorStop(1, '#3c4956');
+  sky.addColorStop(0, T.sky[0]); sky.addColorStop(0.55, T.sky[1]); sky.addColorStop(1, T.sky[2]);
   g.fillStyle = sky; g.fillRect(0, 0, 1000, 1250);
   const srng = mulberry32(42);
-  g.fillStyle = '#dfe9ff';
+  g.fillStyle = T.star;
   for (let i = 0; i < 90; i++) { g.globalAlpha = 0.3 + srng() * 0.5; g.fillRect(srng() * 1000, srng() * 650, 2, 2); }
   g.globalAlpha = 1;
-  g.fillStyle = 'rgba(242,236,216,.15)'; g.beginPath(); g.arc(820, 170, 90, 0, 6.28); g.fill();
-  g.fillStyle = '#f2ecd8'; g.beginPath(); g.arc(820, 170, 58, 0, 6.28); g.fill();
-  g.fillStyle = '#131e2a';
+  if (T.moon) {
+    g.fillStyle = T.moon.halo; g.beginPath(); g.arc(820, 170, 90, 0, 6.28); g.fill();
+    g.fillStyle = T.moon.disc; g.beginPath(); g.arc(820, 170, 58, 0, 6.28); g.fill();
+  }
+  g.fillStyle = T.hills[0];
   g.beginPath(); g.moveTo(0, 1250);
-  for (let x = 0; x <= 1000; x += 25) g.lineTo(x, 880 - Math.abs(Math.sin(x * 0.008)) * 120 - Math.abs(Math.sin(x * 0.03)) * 30);
+  for (let x = 0; x <= 1000; x += 25) g.lineTo(x, 880 - Math.abs(Math.sin(x * 0.008 + T.ridge0)) * 120 - Math.abs(Math.sin(x * 0.03)) * 30);
   g.lineTo(1000, 1250); g.fill();
   const water = g.createLinearGradient(0, 1060, 0, 1250);
-  water.addColorStop(0, 'rgba(56,124,148,.95)'); water.addColorStop(1, 'rgba(18,46,66,1)');
+  water.addColorStop(0, T.water[0]); water.addColorStop(1, T.water[1]);
   g.fillStyle = water; g.fillRect(0, 1060, 1000, 190);
   const tr = trailOf(equipped.trail), sk = skinOf(equipped.skin);
   const lx = 700, ly = 380, fx2 = 380, fy2 = 620;
@@ -1628,8 +1731,8 @@ function makeShareCard(r) {
   g.fillStyle = r.won ? '#ffe28a' : '#8fdcee';
   g.fillText(
     r.mode === 'daily'
-      ? (r.won ? `🏁 DAILY #${dailyNum} COMPLETE · ${dailyDateStr.toUpperCase()}` : `DAILY CHALLENGE  #${dailyNum} · ${dailyDateStr.toUpperCase()}`)
-      : 'ENDLESS MODE',
+      ? (r.won ? `🏁 DAILY #${dailyNum} COMPLETE · ${(r.theme || '').toUpperCase()}` : `DAILY CHALLENGE  #${dailyNum} · ${(r.theme || '').toUpperCase()}`)
+      : `ENDLESS MODE · ${(r.theme || '').toUpperCase()}`,
     500, 165);
   g.fillStyle = 'rgba(8,18,28,.72)';
   roundRect(g, 90, 720, 820, 300, 30); g.fill();
@@ -1957,7 +2060,7 @@ function gameOver() {
   ripples.push({ x: frog.x, r: 6, life: 1 }, { x: frog.x, r: 2, life: 1.3 });
   score += Math.floor(dist);
   const { nb, gained } = bankAndBest();
-  lastRun = { mode, dist, flies: flyCount, skims, score, won: false, time: runTime };
+  lastRun = { mode, dist, flies: flyCount, skims, score, won: false, time: runTime, theme: theme.name };
   recordDailyAttempt();
   track('run_end', mode, Math.floor(dist));   // splash: value = distance reached (m)
   showDeath(nb, gained);
@@ -1982,7 +2085,7 @@ function win() {
   dailyDone[dailyNum] = true;
   updateDailyLabel();
   const { gained } = bankAndBest();
-  lastRun = { mode, dist, flies: flyCount, skims, score, won: true, time: runTime };
+  lastRun = { mode, dist, flies: flyCount, skims, score, won: true, time: runTime, theme: theme.name };
   recordDailyResult();
   track('daily_win', 'daily', Math.round(runTime));   // value = finish time (s)
   showWin(nbTime, gained);
@@ -2134,45 +2237,96 @@ function updateFx(dt) {
 }
 
 // ---------------- render ----------------
+// One parallax silhouette layer. 'hills' is the original rolling ridge; 'pines' walks
+// the same baseline but cuts triangular treetops out of it. Pure decoration — the
+// shape is never read by anything in update().
+function ridge(col, par, base, a1, a2, f1, f2, phase, step, style) {
+  const yAt = wx => base - Math.abs(Math.sin(wx * f1 + phase)) * a1 - Math.abs(Math.sin(wx * f2)) * a2;
+  ctx.fillStyle = col;
+  ctx.beginPath();
+  ctx.moveTo(0, H);
+  if (style === 'pines') {
+    for (let x = 0; x <= W + step; x += step) {
+      const wx = x + camX * par, y = yAt(wx);
+      const h = step * (1.6 + Math.abs(Math.sin(wx * 0.021 + phase)) * 1.5);
+      ctx.lineTo(x, y);
+      ctx.lineTo(x + step * 0.5, y - h);       // treetop
+      ctx.lineTo(x + step, y);
+    }
+  } else {
+    for (let x = 0; x <= W + step; x += step) ctx.lineTo(x, yAt(x + camX * par));
+  }
+  ctx.lineTo(W, H);
+  ctx.fill();
+}
+
 function render(t) {
+  const T = theme;
   const sky = ctx.createLinearGradient(0, 0, 0, H);
-  sky.addColorStop(0, '#0e1e38'); sky.addColorStop(0.55, '#263450'); sky.addColorStop(1, '#3c4956');
+  sky.addColorStop(0, T.sky[0]); sky.addColorStop(0.55, T.sky[1]); sky.addColorStop(1, T.sky[2]);
   ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
 
-  for (const s of stars) {
+  for (const s of T.stars) {
     ctx.globalAlpha = 0.35 + 0.4 * Math.sin(t * 0.001 + s.tw);
-    ctx.fillStyle = '#dfe9ff';
+    ctx.fillStyle = T.star;
     ctx.fillRect(s.x * W, s.y * H, s.s, s.s);
   }
   ctx.globalAlpha = 1;
 
-  ctx.fillStyle = 'rgba(242,236,216,.13)'; ctx.beginPath(); ctx.arc(W * 0.8, H * 0.15, 56, 0, 6.28); ctx.fill();
-  ctx.fillStyle = '#f2ecd8'; ctx.beginPath(); ctx.arc(W * 0.8, H * 0.15, 34, 0, 6.28); ctx.fill();
-  ctx.fillStyle = 'rgba(200,195,180,.5)';
-  ctx.beginPath(); ctx.arc(W * 0.8 - 10, H * 0.15 - 6, 6, 0, 6.28); ctx.fill();
-  ctx.beginPath(); ctx.arc(W * 0.8 + 8, H * 0.15 + 9, 4, 0, 6.28); ctx.fill();
-
-  ctx.fillStyle = '#131e2a';
-  ctx.beginPath(); ctx.moveTo(0, H);
-  for (let x = 0; x <= W + 30; x += 30) {
-    const wx = x + camX * 0.15;
-    ctx.lineTo(x, H * 0.72 - 30 - Math.abs(Math.sin(wx * 0.008)) * 85 - Math.abs(Math.sin(wx * 0.03)) * 22);
+  // aurora: a few slow sine ribbons, screened over the sky
+  if (T.aurora) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    T.aurora.forEach((col, i) => {
+      const yb = H * (0.08 + i * 0.075), amp = 30 + i * 12, ph = T.ridge0 + i * 2.1, band = 110;
+      const gr = ctx.createLinearGradient(0, yb - 40, 0, yb + band + 40);
+      gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(0.45, col); gr.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.globalAlpha = 0.3 - i * 0.05;
+      ctx.fillStyle = gr;
+      ctx.beginPath(); ctx.moveTo(-20, yb);
+      for (let x = -20; x <= W + 20; x += 20) ctx.lineTo(x, yb + Math.sin(x * 0.004 + t * 0.0003 + ph) * amp);
+      for (let x = W + 20; x >= -20; x -= 20) ctx.lineTo(x, yb + band + Math.sin(x * 0.005 + t * 0.0004 + ph) * amp);
+      ctx.closePath(); ctx.fill();
+    });
+    ctx.restore();
   }
-  ctx.lineTo(W, H); ctx.fill();
-  ctx.fillStyle = '#0d151d';
-  ctx.beginPath(); ctx.moveTo(0, H);
-  for (let x = 0; x <= W + 24; x += 24) {
-    const wx = x + camX * 0.35;
-    ctx.lineTo(x, H * 0.84 - 20 - Math.abs(Math.sin(wx * 0.012 + 3)) * 60 - Math.abs(Math.sin(wx * 0.05)) * 14);
-  }
-  ctx.lineTo(W, H); ctx.fill();
 
-  for (const a of ambient) {
+  if (T.moon) {
+    const mx = W * T.moonX, my = H * T.moonY, mr = T.moon.r;
+    ctx.fillStyle = T.moon.halo; ctx.beginPath(); ctx.arc(mx, my, mr * 1.65, 0, 6.28); ctx.fill();
+    ctx.fillStyle = T.moon.disc; ctx.beginPath(); ctx.arc(mx, my, mr, 0, 6.28); ctx.fill();
+    ctx.fillStyle = T.moon.crater;
+    ctx.beginPath(); ctx.arc(mx - mr * 0.3, my - mr * 0.18, mr * 0.18, 0, 6.28); ctx.fill();
+    ctx.beginPath(); ctx.arc(mx + mr * 0.24, my + mr * 0.26, mr * 0.12, 0, 6.28); ctx.fill();
+    // carve the phase by re-filling an offset disc with the sky gradient itself, so
+    // the bite matches the sky behind it exactly at any height
+    if (Math.abs(T.phase) > 0.08) {
+      ctx.save();
+      ctx.beginPath(); ctx.arc(mx, my, mr + 0.5, 0, 6.28); ctx.clip();
+      ctx.fillStyle = sky;
+      ctx.beginPath(); ctx.arc(mx + T.phase * mr * 1.35, my - mr * 0.12, mr, 0, 6.28); ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  ridge(T.hills[0], 0.15, H * 0.72 - 30, 85, 22, 0.008, 0.03, T.ridge0, 30, T.ridge);
+  ridge(T.hills[1], 0.35, H * 0.84 - 20, 60, 14, 0.012, 0.05, T.ridge0 + 3, 24, T.ridge);
+
+  // low fog sitting on the water, behind everything the player interacts with
+  if (T.fogA > 0.01) {
+    const fy = H * 0.60, fg = ctx.createLinearGradient(0, fy, 0, H);
+    fg.addColorStop(0, 'rgba(200,214,226,0)');
+    fg.addColorStop(0.55, `rgba(200,214,226,${(T.fogA * 0.5).toFixed(3)})`);
+    fg.addColorStop(1, `rgba(200,214,226,${(T.fogA * 0.16).toFixed(3)})`);
+    ctx.fillStyle = fg; ctx.fillRect(0, fy, W, H - fy);
+  }
+
+  for (const a of T.flies) {
     a.t += 0.02;
     const px = ((a.x - camX * 0.5) % (W + 100) + W + 100) % (W + 100) - 50;
     const py = a.y * H * 0.8 + Math.sin(a.t) * 20;
     ctx.globalAlpha = (0.25 + 0.25 * Math.sin(a.t * 2)) * 0.8;
-    ctx.fillStyle = '#d6f78a';
+    ctx.fillStyle = T.fly;
     ctx.beginPath(); ctx.arc(px, py, a.s * 2.4, 0, 6.28); ctx.fill();
   }
   ctx.globalAlpha = 1;
@@ -2361,12 +2515,14 @@ function render(t) {
     }
   }
 
+  // Colour and ripple height only — wy is WATER_Y(), which the physics reads, and no
+  // theme may move it. Drowning and skim bonuses stay identical on every sky.
   const water = ctx.createLinearGradient(0, wy, 0, H);
-  water.addColorStop(0, 'rgba(56,124,148,.92)'); water.addColorStop(1, 'rgba(18,46,66,.97)');
+  water.addColorStop(0, T.water[0]); water.addColorStop(1, T.water[1]);
   ctx.fillStyle = water;
   ctx.beginPath(); ctx.moveTo(camX - 10, wy);
   for (let x = -10; x <= W + 20; x += 18) {
-    ctx.lineTo(camX + x, wy + Math.sin(t * 0.0022 + (camX + x) * 0.02) * 4 + Math.sin(t * 0.0009 + (camX + x) * 0.006) * 3);
+    ctx.lineTo(camX + x, wy + (Math.sin(t * 0.0022 + (camX + x) * 0.02) * 4 + Math.sin(t * 0.0009 + (camX + x) * 0.006) * 3) * T.ripple);
   }
   ctx.lineTo(camX + W + 10, H + 10); ctx.lineTo(camX - 10, H + 10); ctx.fill();
 
@@ -2412,6 +2568,31 @@ function render(t) {
   ctx.globalAlpha = 1;
 
   ctx.restore();
+
+  // weather, in screen space over the world: rain streaks or drifting snow. Kept
+  // faint and thin so it never hides a lantern or the frog.
+  if (T.drops.length) {
+    const snow = T.weather === 'snow';
+    ctx.save();
+    if (snow) {
+      ctx.fillStyle = '#eaf4ff';
+      for (const d of T.drops) {
+        const y = (d.y * H + t * 0.03 * (0.4 + d.s)) % (H + 20) - 10;
+        const x = ((d.x * W + camX * 0.25 + Math.sin(t * 0.0008 + d.sway) * 26) % (W + 20) + W + 20) % (W + 20) - 10;
+        ctx.globalAlpha = 0.25 + d.s * 0.3;
+        ctx.beginPath(); ctx.arc(x, y, d.s * 1.7, 0, 6.28); ctx.fill();
+      }
+    } else {
+      ctx.strokeStyle = '#9fc4de'; ctx.lineWidth = 1.2; ctx.lineCap = 'butt';
+      for (const d of T.drops) {
+        const y = (d.y * H + t * 0.6 * (0.6 + d.s)) % (H + 40) - 20;
+        const x = ((d.x * W + camX * 0.4) % (W + 20) + W + 20) % (W + 20) - 10;
+        ctx.globalAlpha = 0.10 + d.s * 0.14;
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - 4, y + 16 + d.s * 10); ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
 
   if (started) {
     ctx.textAlign = 'center';

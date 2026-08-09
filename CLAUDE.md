@@ -76,6 +76,22 @@ Edit `www/index.html` (and `sw.js` / manifest as needed). That's the whole game.
   is `viewport-fit=cover`, so the score/best/mute row never sits under a notch or
   camera cutout on native.
 
+## Daily background themes
+
+Each daily gets its own sky, picked from eight hand-authored palettes in `THEMES`
+(`www/index.html`, search for `const THEMES`). A theme carries colours plus a few
+structural knobs — moon (or none) with a seeded phase and position, star density,
+rolling-hill vs pine silhouettes, fog band, water tint and ripple height, and
+optional rain/snow. Endless picks one at random per run; the menu previews today's.
+
+**The one rule:** the course is generated from `rand` (`mulberry32(dailyNum * 7919 +
+13)`) and *every draw advances that stream*, so theme code must never call `rand()` —
+a single stray call would shift every anchor and give everyone a different course.
+Themes run on their own generator, `mulberry32(dailyNum * 104729 + 7)`. Likewise
+nothing in a theme may move `WATER_Y()` or any other value `update()` reads: palettes,
+silhouettes and particles only. `scratchpad/verify-themes.mjs` asserts both by diffing
+the seeded anchors against `main`.
+
 ## Regenerating native icons & splash
 
 Source art is `resources/icon.png`. The Android icon/splash PNGs in
