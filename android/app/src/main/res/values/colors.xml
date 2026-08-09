@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!-- Swamp night — matches body background in www/index.html, the web manifest's
+       theme_color, and backgroundColor in capacitor.config.json. -->
+  <color name="splashBackground">#0d1b2a</color>
+</resources>
