@@ -864,7 +864,14 @@ function spawnAnchor() {
   // every player gets the same hazards on the same daily. Rare at first and climbing
   // with distance; nothing at all inside the first SNAKE_MIN_M.
   const m = lastAnchorX / 50;
-  const reedP = m < SNAKE_MIN_M ? 0 : Math.min(0.42, (m - SNAKE_MIN_M) / 1500);
+  // The ramp is measured across the run the player will actually have, not a fixed
+  // number of metres. The daily ends at DAILY_GOAL_M, so a fixed endless-length ramp
+  // spent almost all of itself past the finish line and most dailies met no snake at
+  // all. Normalising to the mode's span puts the same rare-to-common curve inside
+  // whichever run this is. `mode` is constant for a daily, so it stays deterministic.
+  const hazSpan = mode === 'daily' ? Math.max(120, DAILY_GOAL_M - SNAKE_MIN_M) : 1500;
+  const ramp = Math.max(0, Math.min(1, (m - SNAKE_MIN_M) / hazSpan));
+  const reedP = m < SNAKE_MIN_M ? 0 : 0.06 + ramp * 0.36;
   // No draw at all inside the exclusion zone. Rolling there would consume a value and
   // shift every lantern after it, so the opening stretch of every daily would change
   // for no reason; this way the course only diverges from where hazards can appear.
@@ -874,7 +881,7 @@ function spawnAnchor() {
     const h = 120 + rand() * 105;
     const cluster = { x: rx, h, blades: 3 + Math.floor(rand() * 3), sway: rand() * 6.28, rustle: 0, near: false, snake: null };
     const sy = WATER_Y() - h * (0.52 + rand() * 0.22);       // coiled partway up
-    const snakeP = Math.min(0.62, 0.22 + (m - SNAKE_MIN_M) / 2200);
+    const snakeP = 0.26 + ramp * 0.36;
     if (rand() < snakeP && snakeSafeAt(rx, sy)) {
       cluster.snake = { y: sy, t: rand() * 6.28, state: 'idle', lungeT: 0, gx: rx, gy: sy, close: false, paid: false };
     }
