@@ -561,6 +561,19 @@ const maxRope = () => { const a = abilityOf(); return MAX_ROPE + (a && a.rope ||
 const GRAB_MIN = 26;       // closest grabbable distance (was 44 — too strict up close)
 const GRAB_SLACK = 1.15;   // an accurate tap still catches a lantern up to 15% past the rope
 const TAP_ASSIST = 90;     // how near the tap must land to earn that stretch
+// ---------------- anaconda hazard ----------------
+// Tall reed clusters rise from the water; some hide a coiled anaconda partway up.
+// Placement comes from the same seeded stream as the lanterns (see spawnAnchor), so
+// the daily is identical for everyone.
+const SNAKE_MIN_M = 150;    // nothing lurks inside the first 150m
+const SNAKE_R = 76;         // strike radius — drawn, so the player can read it
+const SNAKE_CLEAR = 128;    // gap the strike edge must keep from any lantern
+const SNAKE_CEIL = 300;     // strike zone stays this far below the lantern band
+const SNAKE_LUNGE = 0.17;   // seconds to full extension
+const SNAKE_RECOVER = 0.55; // seconds back to coiled
+const SNAKE_BITE = 30;      // head radius that actually kills
+const SNAKE_NEAR = 1.45;    // lunge came this close to counting as a hit -> close call
+const CLOSE_CALL = 40;
 //   'yes'   grabbable right now
 //   'slack' just out of rope, but an accurate tap still lands it
 //   'no'    unreachable from here
@@ -711,6 +724,12 @@ const sBuy     = () => { tone(520, 780, 0.1, 'triangle', 0.14); tone(780, 1180, 
 const sEquip   = () => tone(600, 880, 0.1, 'sine', 0.12);
 const sDeny    = () => tone(220, 140, 0.18, 'square', 0.1);
 const sMiss    = () => { tone(300, 170, 0.11, 'sine', 0.05); noise(0.05, 0.03, 600); };
+// anaconda: a dry rustle as you near the reeds, a hiss on the lunge, a wet snap on
+// contact (deliberately nothing like sSplash — the two deaths must sound different).
+const sRustle  = () => noise(0.14, 0.05, 2800);
+const sHiss    = () => { noise(0.30, 0.11, 3400); tone(150, 95, 0.28, 'sawtooth', 0.07); };
+const sBite    = () => { noise(0.5, 0.34, 480); tone(160, 40, 0.55, 'sawtooth', 0.17); tone(95, 32, 0.7, 'sine', 0.13, 0.06); };
+const sClose   = () => { tone(900, 1520, 0.15, 'triangle', 0.13); tone(1350, 1950, 0.16, 'triangle', 0.09, 0.05); };
 const sWin     = () => {
   const notes = [523, 659, 784, 1046, 1318];
   notes.forEach((f, i) => tone(f, f, 0.22, 'square', 0.1, i * 0.12));
@@ -730,6 +749,10 @@ let frog, anchors, flies, particles, texts, ripples, trail;
 let camX, camShake, holding, attached, ropeLen, tongueT;
 let dist, score, flyCount, skims, combo, comboT, nextMile;
 let dead, won, started = false, timeScale = 1, skimArmed, deathT, runTime;
+let reeds = [];             // { x, h, blades, sway, rustle, near, snake }
+let deathCause = 'splash';  // 'splash' | 'snake' — picks the death sequence
+let grabbed = null;         // the snake dragging the frog down, during a snake death
+let snakeDanger = false;    // a strike is in progress nearby -> slow-mo, read next frame
 let launched = false, padLift = false;     // pre-launch idle on the lily pad
 // Control scheme:
 //   'anywhere' — a ring marks the lantern a tap will grab; tap anywhere to take it,
@@ -836,6 +859,48 @@ function spawnAnchor() {
   if (rand() < 0.7) {
     flies.push({ x: lastAnchorX + 30 + rand() * 130, y: y + 70 + rand() * Math.max(60, WATER_Y() - y - 190), t: rand() * 6.28, eaten: false });
   }
+  // ------- reed clusters, some with an anaconda -------
+  // Drawn from `rand`, the same seeded stream as the lanterns and flies above, so
+  // every player gets the same hazards on the same daily. Rare at first and climbing
+  // with distance; nothing at all inside the first SNAKE_MIN_M.
+  const m = lastAnchorX / 50;
+  const reedP = m < SNAKE_MIN_M ? 0 : Math.min(0.42, (m - SNAKE_MIN_M) / 1500);
+  // No draw at all inside the exclusion zone. Rolling there would consume a value and
+  // shift every lantern after it, so the opening stretch of every daily would change
+  // for no reason; this way the course only diverges from where hazards can appear.
+  if (reedP > 0 && rand() < reedP) {
+    const prev = anchors.length > 1 ? anchors[anchors.length - 2].x : PAD_X;
+    const rx = prev + (lastAnchorX - prev) * (0.28 + rand() * 0.44);
+    const h = 120 + rand() * 105;
+    const cluster = { x: rx, h, blades: 3 + Math.floor(rand() * 3), sway: rand() * 6.28, rustle: 0, near: false, snake: null };
+    const sy = WATER_Y() - h * (0.52 + rand() * 0.22);       // coiled partway up
+    const snakeP = Math.min(0.62, 0.22 + (m - SNAKE_MIN_M) / 2200);
+    if (rand() < snakeP && snakeSafeAt(rx, sy)) {
+      cluster.snake = { y: sy, t: rand() * 6.28, state: 'idle', lungeT: 0, gx: rx, gy: sy, close: false, paid: false };
+    }
+    reeds.push(cluster);
+  }
+}
+// A snake may only lurk where the player can still play around it:
+//  - its strike zone never touches a nearby lantern, so grabbing one and hanging on a
+//    short rope is never fatal by itself;
+//  - the zone stays low enough that there is always clear air above it to fly through,
+//    so no snake can wall off the corridor;
+//  - it never sits on a fly, which would bait the player straight into it.
+// Reading `anchors`/`flies` here is deterministic even though both get culled behind
+// the camera: reeds are placed out at lastAnchorX, ~1400px ahead of the cull line, and
+// this only looks within MAX_ROPE+260 of that — every anchor in range is still live and
+// no fly out there can have been eaten yet.
+function snakeSafeAt(sx, sy) {
+  if (sy - SNAKE_R < WATER_Y() - SNAKE_CEIL) return false;
+  for (const a of anchors) {
+    if (Math.abs(a.x - sx) > MAX_ROPE + 260) continue;
+    if (Math.hypot(a.x - sx, a._ry - sy) < SNAKE_R + SNAKE_CLEAR) return false;
+  }
+  for (const f of flies) {
+    if (Math.hypot(f.x - sx, f.y - sy) < SNAKE_R + 44) return false;
+  }
+  return true;
 }
 
 function reset() {
@@ -848,7 +913,8 @@ function reset() {
   frog = { x: PAD_X, y: WATER_Y() - 34, vx: 0, vy: 0, r: 20, squash: 0, blink: 0 };
   launched = false; padLift = false; missT = 0;
   selAnchor = null; selLocked = false;
-  anchors = []; flies = []; particles = []; texts = []; ripples = []; trail = [];
+  anchors = []; flies = []; particles = []; texts = []; ripples = []; trail = []; reeds = [];
+  deathCause = 'splash'; grabbed = null; snakeDanger = false;
   camX = 0; camShake = 0; holding = false; attached = null; ropeLen = 0; tongueT = 0;
   dist = 0; score = 0; flyCount = 0; skims = 0; combo = 0; comboT = 0; nextMile = 100;
   dead = false; won = false; timeScale = 1; skimArmed = false; deathT = 0; runTime = 0;
@@ -908,7 +974,7 @@ function fillEndStats(banked) {
   el('leagueTag').style.display = 'none';
 }
 function showDeath(newBest, banked) {
-  el('title').textContent = 'SPLASH!';
+  el('title').textContent = deathCause === 'snake' ? '🐍 SNAKED!' : 'SPLASH!';
   el('title').classList.remove('win');
   el('newbest').style.display = newBest ? 'block' : 'none';
   el('lDist').textContent = 'DISTANCE';
@@ -2050,14 +2116,25 @@ function bankAndBest() {
   saveGame();
   return { nb, gained };
 }
-function gameOver() {
-  dead = true; deathT = 0; holding = false; attached = null;
-  camShake = 18;
-  sSplash();
-  Haptics.impact('HEAVY');
-  burst(frog.x, WATER_Y(), '#8fdcee', 30, 420, 1.2);
-  burst(frog.x, WATER_Y(), '#cff3fb', 14, 240, 1.2);
-  ripples.push({ x: frog.x, r: 6, life: 1 }, { x: frog.x, r: 2, life: 1.3 });
+// cause defaults to 'splash', so every existing call site is unchanged. Everything
+// below the sequence — scoring, banking, lastRun, recordDailyAttempt(), track() — runs
+// identically either way, so leaderboard submissions do not care how you died.
+function gameOver(cause = 'splash') {
+  dead = true; deathCause = cause; deathT = 0; holding = false; attached = null;
+  if (cause === 'snake') {
+    camShake = 26;
+    sBite();
+    Haptics.impact('HEAVY');
+    burst(frog.x, frog.y, '#7fae4a', 22, 300, 0.6);
+    burst(frog.x, frog.y, '#2f5d38', 12, 200, 0.6);
+  } else {
+    camShake = 18;
+    sSplash();
+    Haptics.impact('HEAVY');
+    burst(frog.x, WATER_Y(), '#8fdcee', 30, 420, 1.2);
+    burst(frog.x, WATER_Y(), '#cff3fb', 14, 240, 1.2);
+    ripples.push({ x: frog.x, r: 6, life: 1 }, { x: frog.x, r: 2, life: 1.3 });
+  }
   score += Math.floor(dist);
   const { nb, gained } = bankAndBest();
   lastRun = { mode, dist, flies: flyCount, skims, score, won: false, time: runTime, theme: theme.name };
@@ -2094,7 +2171,21 @@ function win() {
 // ---------------- update ----------------
 function update(dt, rdt) {
   if (!started) return;
-  if (dead) { deathT += rdt; updateFx(rdt); return; }
+  if (dead) {
+    deathT += rdt;
+    // snake death: the frog is hauled back into the reeds and pulled under
+    if (deathCause === 'snake' && grabbed) {
+      const k = Math.min(1, deathT / 0.9);
+      frog.x = grabbed.hx + (grabbed.rd.x - grabbed.hx) * k;
+      frog.y = grabbed.hy + (WATER_Y() + 14 - grabbed.hy) * k * k;
+      frog.squash = 0.34 * (1 - k);
+      if (!grabbed.splashed && k > 0.82) {
+        grabbed.splashed = true;
+        ripples.push({ x: frog.x, r: 5, life: 0.9 });
+      }
+    }
+    updateFx(rdt); return;
+  }
   updateSelection();   // keeps the 'anywhere' ring on whatever a tap would grab
 
   if (!launched) {
@@ -2112,7 +2203,10 @@ function update(dt, rdt) {
   }
   runTime += rdt;
 
-  const target = (frog.y > WATER_Y() - 80 && frog.vy > -50) ? 0.4 : 1;
+  // Same slow-mo the skim uses, now also while a snake is striking nearby. snakeDanger
+  // is set at the end of the frame below, so this reads last frame's — one frame of lag
+  // at 60fps, and it keeps the hazard loop after the movement it reacts to.
+  const target = ((frog.y > WATER_Y() - 80 && frog.vy > -50) || snakeDanger) ? 0.4 : 1;
   timeScale += (target - timeScale) * Math.min(1, rdt * 8);
   dt *= timeScale;
 
@@ -2206,11 +2300,55 @@ function update(dt, rdt) {
     }
   }
 
+  // ------- anaconda -------
+  snakeDanger = false;
+  for (const rd of reeds) {
+    rd.sway += dt * 1.6;
+    rd.rustle = Math.max(0, rd.rustle - dt * 1.8);
+    // reeds rustle as the frog closes in — the warning arrives before the strike zone
+    const near = Math.abs(rd.x - frog.x) < 300;
+    if (near && !rd.near) { rd.rustle = 1; if (rd.snake) sRustle(); }
+    rd.near = near;
+    const s = rd.snake;
+    if (!s) continue;
+    s.t += dt * 2;
+    const d = Math.hypot(frog.x - rd.x, frog.y - s.y);
+    if (s.state === 'idle') {
+      if (d < SNAKE_R) {
+        // lunge at where the frog is NOW: keep moving and it misses behind you
+        s.state = 'strike'; s.lungeT = 0; s.gx = frog.x; s.gy = frog.y;
+        s.close = false; s.paid = false;
+        sHiss(); Haptics.impact('LIGHT');
+        camShake = Math.max(camShake, 5);
+      }
+    } else {
+      s.lungeT += dt;
+      const k = Math.min(1, s.lungeT / SNAKE_LUNGE);
+      const hx = rd.x + (s.gx - rd.x) * k, hy = s.y + (s.gy - s.y) * k;
+      if (Math.hypot(frog.x - hx, frog.y - hy) < SNAKE_BITE + frog.r) {
+        grabbed = { rd, s, hx, hy, splashed: false };
+        gameOver('snake');
+        return;
+      }
+      if (d < SNAKE_R * SNAKE_NEAR) s.close = true;
+      // paid the moment the lunge is fully out and has missed — not after recovery,
+      // so the reward lands while the near-miss is still on screen
+      if (k === 1 && s.close && !s.paid) {
+        s.paid = true; score += CLOSE_CALL;
+        floatText(frog.x, frog.y + 30, 'CLOSE CALL! +' + CLOSE_CALL, '#ff9c9c', 24);
+        sClose(); Haptics.impact('MEDIUM');
+      }
+      if (s.lungeT > SNAKE_LUNGE + SNAKE_RECOVER) { s.state = 'idle'; s.lungeT = 0; }
+    }
+    if (d < SNAKE_R * 1.9 || s.state === 'strike') snakeDanger = true;
+  }
+
   const camTarget = frog.x - W * 0.3;
   camX += (camTarget - camX) * Math.min(1, dt * 5);
   while (lastAnchorX < camX + W * 1.7) spawnAnchor();
   anchors = anchors.filter(a => a.x > camX - 350);
   flies = flies.filter(f => !f.eaten && f.x > camX - 350);
+  reeds = reeds.filter(r => r.x > camX - 350);
 
   trail.push({ x: frog.x, y: frog.y });
   if (trail.length > 14) trail.shift();
@@ -2477,7 +2615,9 @@ function render(t) {
       ctx.restore();
     }
 
-    if (!dead || won || deathT < 0.1) drawFrog();
+    // a snake death keeps the frog on screen: you watch it hauled into the reeds and
+    // pulled under, rather than vanishing the instant it dies like a splash
+    if (!dead || won || deathT < 0.1 || (deathCause === 'snake' && deathT < 1.1)) drawFrog();
 
     for (const p of particles) {
       ctx.globalAlpha = Math.max(0, Math.min(1, p.life * 1.6));
@@ -2538,6 +2678,8 @@ function render(t) {
       ctx.lineTo(PAD_X + Math.cos(va) * 38, wy + Math.sin(va) * 8); ctx.stroke();
     }
   }
+
+  drawReeds(t, wy);
 
   for (const a of anchors) {
     const ry = 2 * wy - a._ry;
@@ -2628,6 +2770,97 @@ function render(t) {
   const v = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.45, W / 2, H / 2, Math.max(W, H) * 0.75);
   v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,.32)');
   ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+}
+
+// Reed clusters and their anacondas, drawn in front of the water plane but behind the
+// lanterns. The snake is fully visible long before it matters — coiled, swaying, eyes
+// catching the light — and its strike radius is drawn as a ring that brightens as the
+// frog closes in, so the danger line is something the player can read rather than guess.
+function drawReeds(t, wy) {
+  for (const rd of reeds) {
+    if (rd.x < camX - 140 || rd.x > camX + W + 140) continue;
+    for (let i = 0; i < rd.blades; i++) {
+      const off = (i - (rd.blades - 1) / 2) * 13;
+      const hh = rd.h * (0.7 + ((i * 37) % 100) / 200);
+      const bend = Math.sin(rd.sway + i * 1.3) * (7 + rd.rustle * 17);
+      ctx.strokeStyle = i % 2 ? '#2f5d38' : '#3c7444';
+      ctx.lineWidth = 5; ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(rd.x + off, wy + 6);
+      ctx.quadraticCurveTo(rd.x + off + bend * 0.4, wy - hh * 0.55, rd.x + off + bend, wy - hh);
+      ctx.stroke();
+    }
+    const s = rd.snake;
+    if (!s) continue;
+
+    // strike radius: dashed, slowly rotating, hotter the closer the frog gets
+    const d = Math.hypot(frog.x - rd.x, frog.y - s.y);
+    const heat = Math.max(0, 1 - d / (SNAKE_R * 2.2));
+    ctx.save();
+    ctx.setLineDash([7, 9]);
+    ctx.lineDashOffset = -t * 0.02;
+    ctx.strokeStyle = `rgba(255,120,110,${(0.10 + heat * 0.55).toFixed(3)})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(rd.x, s.y, SNAKE_R, 0, 6.28); ctx.stroke();
+    ctx.restore();
+
+    // extension: out over SNAKE_LUNGE, then back in over SNAKE_RECOVER
+    const k = s.state === 'idle' ? 0 : Math.min(1, s.lungeT / SNAKE_LUNGE);
+    const rec = s.state === 'idle' ? 0
+      : Math.max(0, 1 - Math.max(0, s.lungeT - SNAKE_LUNGE) / SNAKE_RECOVER);
+    const ext = k * rec;
+    // At rest the head sits up and forward of the coil, swaying — drawing it at the
+    // coil's centre would bury it inside the body and the snake would read as a blob.
+    const rhx = rd.x + 21 + Math.sin(s.t * 0.8) * 6;
+    const rhy = s.y - 25 + Math.cos(s.t * 0.6) * 4;
+    const hx = rhx + (s.gx - rhx) * ext, hy = rhy + (s.gy - rhy) * ext;
+
+    // coiled body: a flattened spiral, so it reads as loops stacked in the reeds
+    const coil = (col, w, scale) => {
+      ctx.strokeStyle = col; ctx.lineWidth = w; ctx.lineCap = 'round';
+      ctx.beginPath();
+      for (let a = 0; a <= 13.2; a += 0.22) {
+        const rr = (27 - a * 1.7) * scale;
+        const px = rd.x + Math.cos(a + s.t * 0.25) * rr;
+        const py = s.y + Math.sin(a + s.t * 0.25) * rr * 0.55;
+        if (a === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+    };
+    coil('#2c5320', 15, 1);          // shadowed underside
+    coil('#4d8a33', 11, 1);          // body
+    coil('#6fb04a', 4, 0.97);        // top highlight
+    // neck out to the head
+    ctx.strokeStyle = '#4d8a33'; ctx.lineWidth = 12; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(rd.x + 6, s.y - 4);
+    ctx.quadraticCurveTo(rd.x + (hx - rd.x) * 0.45, s.y - 30 - ext * 12, hx, hy);
+    ctx.stroke();
+    ctx.strokeStyle = '#6fb04a'; ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(rd.x + 6, s.y - 6);
+    ctx.quadraticCurveTo(rd.x + (hx - rd.x) * 0.45, s.y - 33 - ext * 12, hx, hy);
+    ctx.stroke();
+
+    ctx.save();
+    ctx.translate(hx, hy);
+    ctx.rotate(Math.atan2(hy - rhy, hx - rd.x));
+    ctx.fillStyle = '#5d9c3d';
+    ctx.beginPath(); ctx.ellipse(0, 0, 19, 12, 0, 0, 6.28); ctx.fill();
+    ctx.fillStyle = '#78bd52';
+    ctx.beginPath(); ctx.ellipse(-2, -3, 14, 6, 0, 0, 6.28); ctx.fill();
+    if (Math.sin(s.t * 3) > 0.72) {          // tongue flick
+      ctx.strokeStyle = '#e0555f'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(15, 0); ctx.lineTo(27, 0); ctx.stroke();
+    }
+    for (const sy2 of [-4.2, 4.2]) {         // eyes catching the moonlight
+      ctx.fillStyle = '#ffe9a8';
+      ctx.beginPath(); ctx.arc(5, sy2, 2.7, 0, 6.28); ctx.fill();
+      ctx.fillStyle = '#191919';
+      ctx.beginPath(); ctx.arc(6.2, sy2, 1.2, 0, 6.28); ctx.fill();
+    }
+    ctx.restore();
+  }
 }
 
 function drawFrog() {

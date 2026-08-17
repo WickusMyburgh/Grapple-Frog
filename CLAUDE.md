@@ -92,6 +92,31 @@ nothing in a theme may move `WATER_Y()` or any other value `update()` reads: pal
 silhouettes and particles only. `scratchpad/verify-themes.mjs` asserts both by diffing
 the seeded anchors against `main`.
 
+## The anaconda hazard
+
+Tall reed clusters rise from the water; some hide a coiled anaconda partway up
+(search `SNAKE_` in `www/index.html`). Enter its strike radius and it lunges;
+contact ends the run with `deathCause = 'snake'` — its own animation, sound and
+shake — while escaping a near miss pays `CLOSE CALL! +40`.
+
+Placement comes from **`rand`**, the same seeded stream as the lanterns and flies,
+so every player gets the same hazards on the same daily. Two consequences to know:
+
+- Because it shares that stream, adding this feature **changed every daily course
+  past the 150m exclusion zone**. No `rand()` is spent inside the zone, so the
+  opening stretch of each daily is byte-identical to before, and the divergence
+  starts where hazards can first appear.
+- `snakeSafeAt()` is what keeps a hazard fair, and it is not optional: no snake may
+  sit within `SNAKE_R + SNAKE_CLEAR` of a lantern in rope range, its strike zone must
+  stay below `WATER_Y() - SNAKE_CEIL` so there is always clear air to fly over, and it
+  may never sit on a fly. `scratchpad/verify-snake.mjs` re-checks all three across a
+  ~2400m survey.
+
+`gameOver(cause)` defaults to `'splash'`, so existing call sites are unchanged, and
+everything after the death sequence — scoring, banking, `lastRun`,
+`recordDailyAttempt()`, `track()` — runs identically either way. Leaderboard writes
+do not know or care how the frog died.
+
 ## Regenerating native icons & splash
 
 Source art is `resources/icon.png`. The Android icon/splash PNGs in
