@@ -574,6 +574,10 @@ const SNAKE_RECOVER = 0.55; // seconds back to coiled
 const SNAKE_BITE = 30;      // head radius that actually kills
 const SNAKE_NEAR = 1.45;    // lunge came this close to counting as a hit -> close call
 const CLOSE_CALL = 40;
+// Purely how big the anaconda is DRAWN. It is an anaconda and the frog's radius is 20,
+// so at 1.0 it looked like a garden snake. Nothing here touches SNAKE_R or SNAKE_BITE,
+// so the strike radius and the kill distance are exactly what they were.
+const SNAKE_ART = 1.55;
 //   'yes'   grabbable right now
 //   'slack' just out of rope, but an accurate tap still lands it
 //   'no'    unreachable from here
@@ -2319,6 +2323,11 @@ function update(dt, rdt) {
     const s = rd.snake;
     if (!s) continue;
     s.t += dt * 2;
+    // Where the head rests when coiled — up and forward of the body, swaying. The
+    // lunge interpolates from HERE, and drawReeds() draws from the same two numbers,
+    // so what you see strike you is exactly what the contact test uses.
+    s.rhx = rd.x + 21 * SNAKE_ART + Math.sin(s.t * 0.8) * 6;
+    s.rhy = s.y - 25 * SNAKE_ART + Math.cos(s.t * 0.6) * 4;
     const d = Math.hypot(frog.x - rd.x, frog.y - s.y);
     if (s.state === 'idle') {
       if (d < SNAKE_R) {
@@ -2331,7 +2340,7 @@ function update(dt, rdt) {
     } else {
       s.lungeT += dt;
       const k = Math.min(1, s.lungeT / SNAKE_LUNGE);
-      const hx = rd.x + (s.gx - rd.x) * k, hy = s.y + (s.gy - s.y) * k;
+      const hx = s.rhx + (s.gx - s.rhx) * k, hy = s.rhy + (s.gy - s.rhy) * k;
       if (Math.hypot(frog.x - hx, frog.y - hy) < SNAKE_BITE + frog.r) {
         grabbed = { rd, s, hx, hy, splashed: false };
         gameOver('snake');
@@ -2787,11 +2796,14 @@ function drawReeds(t, wy) {
   for (const rd of reeds) {
     if (rd.x < camX - 140 || rd.x > camX + W + 140) continue;
     for (let i = 0; i < rd.blades; i++) {
-      const off = (i - (rd.blades - 1) / 2) * 13;
+      // wider, thicker blades so the cluster reads big enough to hide the anaconda.
+      // rd.h is untouched — it feeds the snake's height, and changing it would move
+      // snakeSafeAt()'s verdicts and so change which clusters are occupied.
+      const off = (i - (rd.blades - 1) / 2) * 16;
       const hh = rd.h * (0.7 + ((i * 37) % 100) / 200);
       const bend = Math.sin(rd.sway + i * 1.3) * (7 + rd.rustle * 17);
       ctx.strokeStyle = i % 2 ? '#2f5d38' : '#3c7444';
-      ctx.lineWidth = 5; ctx.lineCap = 'round';
+      ctx.lineWidth = 6.5; ctx.lineCap = 'round';
       ctx.beginPath();
       ctx.moveTo(rd.x + off, wy + 6);
       ctx.quadraticCurveTo(rd.x + off + bend * 0.4, wy - hh * 0.55, rd.x + off + bend, wy - hh);
@@ -2818,16 +2830,19 @@ function drawReeds(t, wy) {
     const ext = k * rec;
     // At rest the head sits up and forward of the coil, swaying — drawing it at the
     // coil's centre would bury it inside the body and the snake would read as a blob.
-    const rhx = rd.x + 21 + Math.sin(s.t * 0.8) * 6;
-    const rhy = s.y - 25 + Math.cos(s.t * 0.6) * 4;
+    const A = SNAKE_ART;
+    // set by update() so the drawn head and the contact test share one origin; a snake
+    // that has never been updated (just spawned off-screen) falls back to the same sums
+    const rhx = s.rhx != null ? s.rhx : rd.x + 21 * A;
+    const rhy = s.rhy != null ? s.rhy : s.y - 25 * A;
     const hx = rhx + (s.gx - rhx) * ext, hy = rhy + (s.gy - rhy) * ext;
 
     // coiled body: a flattened spiral, so it reads as loops stacked in the reeds
     const coil = (col, w, scale) => {
-      ctx.strokeStyle = col; ctx.lineWidth = w; ctx.lineCap = 'round';
+      ctx.strokeStyle = col; ctx.lineWidth = w * A; ctx.lineCap = 'round';
       ctx.beginPath();
       for (let a = 0; a <= 13.2; a += 0.22) {
-        const rr = (27 - a * 1.7) * scale;
+        const rr = (27 - a * 1.7) * scale * A;
         const px = rd.x + Math.cos(a + s.t * 0.25) * rr;
         const py = s.y + Math.sin(a + s.t * 0.25) * rr * 0.55;
         if (a === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
@@ -2838,20 +2853,21 @@ function drawReeds(t, wy) {
     coil('#4d8a33', 11, 1);          // body
     coil('#6fb04a', 4, 0.97);        // top highlight
     // neck out to the head
-    ctx.strokeStyle = '#4d8a33'; ctx.lineWidth = 12; ctx.lineCap = 'round';
+    ctx.strokeStyle = '#4d8a33'; ctx.lineWidth = 12 * A; ctx.lineCap = 'round';
     ctx.beginPath();
-    ctx.moveTo(rd.x + 6, s.y - 4);
-    ctx.quadraticCurveTo(rd.x + (hx - rd.x) * 0.45, s.y - 30 - ext * 12, hx, hy);
+    ctx.moveTo(rd.x + 6 * A, s.y - 4 * A);
+    ctx.quadraticCurveTo(rd.x + (hx - rd.x) * 0.45, s.y - (30 + ext * 12) * A, hx, hy);
     ctx.stroke();
-    ctx.strokeStyle = '#6fb04a'; ctx.lineWidth = 4;
+    ctx.strokeStyle = '#6fb04a'; ctx.lineWidth = 4 * A;
     ctx.beginPath();
-    ctx.moveTo(rd.x + 6, s.y - 6);
-    ctx.quadraticCurveTo(rd.x + (hx - rd.x) * 0.45, s.y - 33 - ext * 12, hx, hy);
+    ctx.moveTo(rd.x + 6 * A, s.y - 6 * A);
+    ctx.quadraticCurveTo(rd.x + (hx - rd.x) * 0.45, s.y - (33 + ext * 12) * A, hx, hy);
     ctx.stroke();
 
     ctx.save();
     ctx.translate(hx, hy);
     ctx.rotate(Math.atan2(hy - rhy, hx - rd.x));
+    ctx.scale(A, A);
     ctx.fillStyle = '#5d9c3d';
     ctx.beginPath(); ctx.ellipse(0, 0, 19, 12, 0, 0, 6.28); ctx.fill();
     ctx.fillStyle = '#78bd52';
