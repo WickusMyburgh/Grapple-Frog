@@ -496,9 +496,13 @@ const Haptics = (() => {
 // So on native we don't use the HTML fields at all — the Dialog plugin's prompt() is
 // a real platform dialog drawn above the WebView, with the OS handling its own
 // keyboard. The web build is untouched and keeps the HTML dialogs.
-const IS_NATIVE = !!(window.Capacitor
-  && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform()
-  && window.Capacitor.Plugins && window.Capacitor.Plugins.Dialog);
+// Two different questions, so two flags. IS_NATIVE_PLATFORM is "are we inside the app's
+// WebView" — what anything about URLs or navigation cares about. IS_NATIVE additionally
+// requires the Dialog plugin, because the text-entry path below is only safe to take if
+// there is a native prompt to take it with.
+const IS_NATIVE_PLATFORM = !!(window.Capacitor
+  && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform());
+const IS_NATIVE = !!(IS_NATIVE_PLATFORM && window.Capacitor.Plugins && window.Capacitor.Plugins.Dialog);
 document.documentElement.classList.toggle('native', IS_NATIVE);
 // Ask for one line of text, re-asking until it validates or the player cancels.
 // `validate` returns null when the value is good, or the message to lead the retry
@@ -1593,7 +1597,7 @@ const leagueInvite = () =>
 // the app is locked to landscape and has no browser chrome.
 el('privacyLink').addEventListener('click', e => {
   e.stopPropagation();
-  if (!IS_NATIVE) return;
+  if (!IS_NATIVE_PLATFORM) return;   // the WebView question, not the Dialog-plugin one
   e.preventDefault();
   try { window.open(CANONICAL_URL + 'privacy.html', '_blank'); } catch (err) {}
 });
@@ -1762,8 +1766,18 @@ refreshRotateHint();
 // ---------------- share card ----------------
 const CANONICAL_URL = 'https://wickusmyburgh.github.io/Grapple-Frog/';
 function playUrl() {
-  // live URL stripped of query/hash (so links follow the hosting), with the
-  // canonical address as fallback outside a web context (file://, etc.)
+  // Every caller is building a link for somebody ELSE to open — share text, a league
+  // invite, the URL burned into the share card — so it has to be an address that exists
+  // off this device.
+  //
+  // In the app it never is. The WebView serves the game from its own origin: Android's
+  // default is https://localhost, iOS's is capacitor://localhost. iOS fell through to
+  // the canonical address by luck, because its scheme is neither http nor https — but
+  // Android's IS https, so the check below accepted it and every Android share read
+  // "▶ Play: https://localhost/", including the text rendered into the share image.
+  if (IS_NATIVE_PLATFORM) return CANONICAL_URL;
+  // On the web, the live URL stripped of query/hash, so links follow wherever the game
+  // is hosted; the canonical address is the fallback outside a web context (file://).
   try {
     if (location.protocol === 'https:' || location.protocol === 'http:') {
       return (location.origin + location.pathname).replace(/index\.html$/, '');
