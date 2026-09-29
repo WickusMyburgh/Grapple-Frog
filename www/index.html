@@ -112,6 +112,14 @@
   }
   .seg.on { background: #9be564; color: #10240f; border-color: #9be564; }
   #schemeHint { font-size: 11px; letter-spacing: 0; opacity: .45; max-width: 320px; text-align: center; line-height: 1.45; }
+  /* Quiet by design: the stores and the PWA install prompt want a reachable privacy
+     policy, but it should never compete with the Play buttons. */
+  #privacyLink {
+    margin-top: 10px; font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+    color: #eaf6e9; opacity: .4; text-decoration: none; border-bottom: 1px solid rgba(234,246,233,.3);
+    padding-bottom: 1px;
+  }
+  #privacyLink:hover { opacity: .85; }
   #msg .tap { display: none; margin-top: 20px; font-size: 12px; letter-spacing: 3px; text-transform: uppercase; opacity: .75; animation: pulse 1.4s infinite; }
   @keyframes pulse { 0%,100% { opacity:.35 } 50% { opacity:1 } }
   #toast {
@@ -337,6 +345,7 @@
       <button class="seg" id="segLantern">Tap the lantern</button>
     </div>
     <div id="schemeHint"></div>
+    <a id="privacyLink" href="privacy.html" target="_blank" rel="noopener">Privacy</a>
   </div>
   <div class="btnrow" id="deathBtns" style="display:none">
     <button class="btn gold" id="btnLb2" style="display:none">🏆 Leaderboard</button>
@@ -1019,7 +1028,7 @@ function toast(txt) {
   tst._t = setTimeout(() => tst.classList.remove('show'), 2200);
 }
 for (const id of ['btnEndless','btnDaily','btnShop','btnShop2','btnShare','btnCopy','btnMenu','shopClose','btnLb','btnLb2','lbClose','nameSave','nameSkip','nameInput','btnInstall','iosTipClose','segAnywhere','segLantern','btnLeagues','lgClose','lgCreate','lgJoin','lgCopy','lgShare','lgLeave',
-                   'lgNameInput','lgCodeInput','tabGlobal','tabLeague','lbX','nameX','lgX','iosX']) {
+                   'lgNameInput','lgCodeInput','tabGlobal','tabLeague','lbX','nameX','lgX','iosX','privacyLink']) {
   ['pointerdown','pointerup'].forEach(ev => el(id).addEventListener(ev, e => e.stopPropagation()));
 }
 el('btnEndless').addEventListener('click', e => { e.stopPropagation(); startGame('endless'); });
@@ -1577,6 +1586,17 @@ function openLeagues() {
 }
 const leagueInvite = () =>
   `Join my Grapple Frog league "${league.name}"!\nCode: ${league.code}\n▶ Play: ${playUrl()}`;
+// On the web this is an ordinary link and target="_blank" does the work. Inside the app
+// a relative href resolves against the WebView's own origin (https://localhost on
+// Android, capacitor://localhost on iOS), so hand the system browser the public copy
+// instead — following it in-WebView would strand the player with no back button, since
+// the app is locked to landscape and has no browser chrome.
+el('privacyLink').addEventListener('click', e => {
+  e.stopPropagation();
+  if (!IS_NATIVE) return;
+  e.preventDefault();
+  try { window.open(CANONICAL_URL + 'privacy.html', '_blank'); } catch (err) {}
+});
 el('btnLeagues').addEventListener('click', e => { e.stopPropagation(); openLeagues(); });
 el('lgClose').addEventListener('click', e => { e.stopPropagation(); el('leagues').classList.remove('open'); });
 const LG_NAME_HINT = 'Give your league a name of 2–24 characters.';
