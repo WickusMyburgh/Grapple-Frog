@@ -3,8 +3,8 @@
 // (e.g. GitHub Pages project sites) as well as at a domain root.
 // Bump this version whenever www/ changes so returning clients purge the old
 // cache and pick up the new game (activate deletes every cache != CACHE).
-const CACHE = 'grapple-frog-v15';
-const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
+const CACHE = 'grapple-frog-v16';
+const ASSETS = ['./', './index.html', './privacy.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
@@ -27,9 +27,12 @@ self.addEventListener('fetch', e => {
       fetch(req).then(res => {
         // Only cache a genuine same-origin page, so a stray redirect or error
         // response can never poison the offline copy of the game.
+        // Keyed by the ACTUAL request, not a hardcoded './index.html': the site has
+        // more than one page now, and writing every navigation to that one key would
+        // file the privacy policy as the game and then serve it offline.
         if (res.ok && !res.redirected && res.type === 'basic') {
           const copy = res.clone();
-          caches.open(CACHE).then(c => c.put('./index.html', copy));
+          caches.open(CACHE).then(c => c.put(req, copy));
         }
         return res;
       }).catch(() =>

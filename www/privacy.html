@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Privacy — Grapple Frog</title>
+<meta name="theme-color" content="#0d1b2a">
+<meta name="description" content="What Grapple Frog stores, what it sends, and how to have it deleted. No ads, no trackers, no accounts.">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0d1b2a; color: #eaf6e9;
+    font-family: 'Trebuchet MS', 'Segoe UI Rounded', 'Segoe UI', sans-serif;
+    line-height: 1.65; font-size: 17px;
+    padding: calc(28px + env(safe-area-inset-top)) calc(20px + env(safe-area-inset-right))
+             calc(60px + env(safe-area-inset-bottom)) calc(20px + env(safe-area-inset-left));
+  }
+  main { max-width: 680px; margin: 0 auto; }
+  h1 {
+    font-size: clamp(30px, 7vw, 44px); color: #9be564; letter-spacing: 1px;
+    text-shadow: 0 3px 0 #2c5b1e; line-height: 1.15;
+  }
+  .sub { margin-top: 10px; opacity: .6; font-size: 14px; letter-spacing: 1px; }
+  h2 {
+    font-size: 21px; color: #ffe28a; margin: 38px 0 12px; letter-spacing: .5px;
+    border-bottom: 1px solid rgba(255,226,138,.22); padding-bottom: 7px;
+  }
+  p { margin: 12px 0; }
+  ul { margin: 12px 0 12px 22px; }
+  li { margin: 7px 0; }
+  a { color: #8fdcee; }
+  a:hover { color: #c5f0fa; }
+  code {
+    background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12);
+    border-radius: 6px; padding: 1px 6px; font-size: 14px;
+    font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  }
+  .tldr {
+    margin-top: 26px; background: rgba(155,229,100,.08);
+    border: 1px solid rgba(155,229,100,.3); border-left: 4px solid #9be564;
+    border-radius: 12px; padding: 16px 20px;
+  }
+  .tldr strong { color: #9be564; }
+  .back {
+    display: inline-block; margin-top: 44px; text-decoration: none;
+    background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.25);
+    color: #eaf6e9; border-radius: 12px; padding: 11px 20px; font-weight: bold;
+  }
+  .back:hover { background: rgba(255,255,255,.16); color: #fff; }
+  footer { margin-top: 40px; font-size: 13px; opacity: .5; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Privacy</h1>
+  <div class="sub">GRAPPLE FROG · LAST UPDATED 29 SEPTEMBER 2026</div>
+
+  <div class="tldr">
+    <p><strong>The short version:</strong> Grapple Frog has no accounts, no ads and no
+    trackers. It never asks for your name, email, age or location. The only thing that
+    leaves your device is a leaderboard entry — a display name you choose yourself, plus
+    your score — and a few anonymous counters telling me how the game is being played.
+    If you want any of it removed, email me and it's gone.</p>
+  </div>
+
+  <h2>What stays on your device</h2>
+  <p>Most of the game is saved only on the device you're playing on, in your browser's
+  local storage (or the app's own storage). It never leaves unless you post a score:</p>
+  <ul>
+    <li>Flies you've banked, and which skins and tongue trails you own and have equipped</li>
+    <li>Your best scores, your best daily time, and which daily challenges you've finished</li>
+    <li>Whether sound is muted and which control scheme you picked</li>
+    <li>The display name you chose, so you don't have to type it again</li>
+  </ul>
+  <p>Clearing your browser's site data, or uninstalling the app, deletes all of it. There's
+  no backup and no way for me to restore it, so a fresh install starts from scratch.</p>
+
+  <h2>What gets sent to the server</h2>
+  <p>Two things, and only these two.</p>
+
+  <p><strong>1. Leaderboard entries.</strong> When you finish or attempt a daily challenge,
+  the game sends:</p>
+  <ul>
+    <li>the display name you typed (2–12 letters or numbers — pick anything you like)</li>
+    <li>which daily it was, your time or distance, and how many flies you caught</li>
+    <li>your league's 6-character join code, if you're in a private league</li>
+  </ul>
+  <p>If you create a private league, the league's name and its join code are stored too, so
+  that anyone with the code can join it.</p>
+
+  <p><strong>2. Anonymous play counters.</strong> To see whether people are enjoying the
+  game, it records events like "a run started", "a daily was finished", "the shop was
+  opened" or "a skin was bought", along with the mode and a single number (a distance, a
+  time, or a price in flies).</p>
+  <p>Each of these carries a random ID like
+  <code>3f9c2e18-7b44-4a91-b0d2-6e5c1a8f2d77</code>, generated on your device the first time
+  you play. That's all it is: a random number. It isn't linked to you, your device's real
+  identifiers, or anything you've done anywhere else, and it's only there so two runs from
+  the same player aren't counted as two different people. Clear your site data or reinstall
+  and you get a brand new one.</p>
+
+  <h2>Where it's kept</h2>
+  <p>Scores, leagues and counters live in a <a href="https://supabase.com" rel="noopener"
+  target="_blank">Supabase</a> database. The web version is hosted on GitHub Pages. Like
+  every website, those servers see the IP address your request came from as part of
+  delivering the page — that's standard plumbing, I don't use it for anything, and it isn't
+  joined up with your scores or your random ID.</p>
+
+  <h2>What Grapple Frog doesn't do</h2>
+  <ul>
+    <li><strong>No ads.</strong> None, anywhere, ever.</li>
+    <li><strong>No third-party trackers or analytics SDKs.</strong> No Google Analytics, no
+    Facebook pixel, no ad networks, no attribution kits. The counters above are homegrown
+    and go straight to my own database.</li>
+    <li><strong>No accounts, no passwords, no email addresses.</strong></li>
+    <li><strong>No personal data.</strong> Your real name, email, phone number, date of
+    birth, contacts, photos, microphone and location are never asked for, read or stored.</li>
+    <li><strong>Nothing is sold or shared.</strong> There's nobody to sell it to and nothing
+    worth selling.</li>
+  </ul>
+
+  <h2>Players under 18</h2>
+  <p>Grapple Frog is suitable for all ages and anyone is welcome to play, including children.
+  There's nothing age-restricted in it, and because the game never asks for personal
+  information, it doesn't knowingly collect any from children or anyone else.</p>
+  <p>One thing worth knowing: the display name you enter appears on a public leaderboard that
+  other players can see. If you're a young player — or a parent helping one — choose a
+  nickname rather than a real full name. That name is the only thing on the leaderboard that
+  you choose, so it's the only thing to be thoughtful about.</p>
+
+  <h2>Deleting your data</h2>
+  <p>You have two options, and neither needs an account.</p>
+  <ul>
+    <li><strong>Do it yourself.</strong> Clearing the site data in your browser, or
+    uninstalling the app, wipes your local save and your random ID immediately. Any
+    leaderboard scores already posted stay up under the display name you used.</li>
+    <li><strong>Ask me.</strong> Email <a href="mailto:Wickus.myburgh@outlook.com">Wickus.myburgh@outlook.com</a>
+    with the display name you played under — and the league code, if you want a league
+    removed — and I'll delete those entries. No proof or account needed; tell me the name and
+    it goes. I'll confirm once it's done.</li>
+  </ul>
+  <p>The anonymous counters can't be traced back to a person by design, so there's nothing
+  identifiable in them to remove. If you'd like them cleared anyway and you still have your
+  random ID, send it along and I'll delete those rows too.</p>
+
+  <h2>Changes</h2>
+  <p>If what the game collects ever changes, I'll update this page and change the date at the
+  top. There's no mailing list to notify, because I don't have your email.</p>
+
+  <h2>Questions</h2>
+  <p>Anything at all — privacy, a deletion request, or just a bug — email
+  <a href="mailto:Wickus.myburgh@outlook.com">Wickus.myburgh@outlook.com</a>.</p>
+
+  <a class="back" href="./">← Back to the game</a>
+
+  <footer>Grapple Frog is made by one person. Thanks for playing. 🐸</footer>
+</main>
+</body>
+</html>
