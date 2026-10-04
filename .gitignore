@@ -25,3 +25,10 @@ www/__*.html
 
 # Patch files (delivered work is applied, not committed)
 *.patch
+
+# Signing keys — never committed. The real keystore lives outside the repo
+# at ~/Documents/keys/grapple-frog.jks (android/.gitignore has these lines
+# commented out by default, so they are set here instead).
+*.jks
+*.keystore
+keystore.properties
